@@ -1,0 +1,16 @@
+[package]
+name = "proteus-cli"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = "4.4.7"
+dasp_ring_buffer = "0.11.0"
+log = "0.4.20"
+matroska = "0.26.0"
+rand = "0.8.5"
+rodio = "0.17.3"
+serde_json = "1.0.108"
+symphonia = "0.5.3"
