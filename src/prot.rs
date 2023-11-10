@@ -13,20 +13,29 @@ pub fn parse_prot(file_path: &String) -> (Vec<u32>, Audio) {
             // read json data from attachment.data to object
             let json_data: serde_json::Value = serde_json::from_slice(&attachment.data).unwrap();
 
+            let encoder_version = json_data["encoder_version"].as_f64();
+
             // For each track in json_data, print the track number
             json_data["play_settings"]["tracks"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .for_each(|track| {
-                    let starting_index =
-                        track["startingIndex"].to_string().parse::<u32>().unwrap() + 1;
-                    let length = track["length"].to_string().parse::<u32>().unwrap();
+                    if let Some(_version) = encoder_version {
+                        let indexes = track["ids"].as_array().unwrap();
+                        let random_number = rand::thread_rng().gen_range(0..indexes.len());
+                        let index = indexes[random_number].to_string().parse::<u32>().unwrap();
+                        track_index_array.push(index);
+                    } else {
+                        let starting_index =
+                            track["startingIndex"].to_string().parse::<u32>().unwrap() + 1;
+                        let length = track["length"].to_string().parse::<u32>().unwrap();
 
-                    // Get random number between starting_index and starting_index + length
-                    let random_number =
-                        rand::thread_rng().gen_range(starting_index..(starting_index + length));
-                    track_index_array.push(random_number);
+                        // Get random number between starting_index and starting_index + length
+                        let random_number =
+                            rand::thread_rng().gen_range(starting_index..(starting_index + length));
+                        track_index_array.push(random_number);
+                    }
                 });
         }
     });
