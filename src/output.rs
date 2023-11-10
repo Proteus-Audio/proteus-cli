@@ -26,7 +26,7 @@ pub fn play(file_path: &String) {
             loop {
                 let buffer_receiver = buffer.recv();
                 if buffer_receiver.is_err() {
-                    println!("Channel hung up: {}", track_id);
+                    // Channel hung up, so add track_id to finished_tracks
                     finished_tracks_copy.lock().unwrap().push(track_id);
                     break;
                 }

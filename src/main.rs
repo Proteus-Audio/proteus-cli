@@ -51,6 +51,7 @@ fn main() {
         .arg(
             Arg::new("no-gapless").long("no-gapless").help("Disable gapless decoding and playback"),
         )
+        .arg(Arg::new("debug").short('d').help("Show debug output"))
         .arg(
             Arg::new("INPUT")
                 .help("The input file path, or - to use standard input")
@@ -78,8 +79,8 @@ fn run(args: &ArgMatches) -> Result<i32> {
     println!("file_path: {:?}", file_path);
 
     // If file is not a .mka file, return an error
-    if !file_path.ends_with(".mka") {
-        panic!("File is not a .mka file");
+    if !(file_path.ends_with(".prot") || file_path.ends_with(".mka")) {
+        panic!("File is not a .prot file");
     }
 
     output::play(file_path);

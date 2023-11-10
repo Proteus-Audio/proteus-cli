@@ -4,7 +4,7 @@ use serde_json;
 
 pub fn parse_prot(file_path: &String) -> (Vec<u32>, Audio) {
     let file = std::fs::File::open(file_path).unwrap();
-    let mka: Matroska = Matroska::open(file).unwrap();
+    let mka: Matroska = Matroska::open(file).expect("Could not open file");
 
     let mut track_index_array: Vec<u32> = Vec::new();
     mka.attachments.iter().for_each(|attachment| {
@@ -38,9 +38,6 @@ pub fn parse_prot(file_path: &String) -> (Vec<u32>, Audio) {
             None
         }
     }).expect("Could not find audio settings");
-
-    println!("track_index_array: {:?}", track_index_array);
-    println!("first_audio_settings: {:?}", first_audio_settings);
 
     return (track_index_array, first_audio_settings);
 }
@@ -120,7 +117,7 @@ pub fn buffer_mka(file_path: &String, track_id: u32) -> mpsc::Receiver<(u32, Vec
 
             if packet.track_id() != track_id {
                 continue;
-            }            
+            }
 
             // If playback is finished, break out of the loop.
             if packet.ts() >= dur.unwrap_or(0) {
