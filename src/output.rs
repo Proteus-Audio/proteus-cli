@@ -13,27 +13,34 @@ pub fn play(file_path: &String) {
     // TODO: Support other channel layouts.
     // let channels = audio_settings.channels;
 
-    let hash_buffer = init_hash_buffer(&track_index_array, Some(sample_rate as usize));
+    let keys: Vec<i32> = track_index_array.iter().enumerate().map(|(i, _v)| i as i32).collect();
+
+    let hash_buffer = init_hash_buffer(&keys, Some(sample_rate as usize));
     let (sender, receiver) = mpsc::sync_channel::<DynamicMixer<f32>>(1);
 
+    // There is undoubtedly a better way to do this, but I'm not sure what it is.
+    let mut index = 0;
     for track_id in track_index_array {
-        let buffer = buffer_mka(file_path, track_id);
+        let key = index.clone();
+        index += 1;
+        let buffer = buffer_mka(file_path, track_id, key);
         let hash_buffer_copy = hash_buffer.clone();
         let finished_tracks_copy = finished_tracks.clone();
         // let source = SamplesBuffer::new(2, 44100, Vec::<f32>::new());
         // source.
         thread::spawn(move || {
             loop {
+                // println!("track_index: {}", this_index);
                 let buffer_receiver = buffer.recv();
                 if buffer_receiver.is_err() {
                     // Channel hung up, so add track_id to finished_tracks
-                    finished_tracks_copy.lock().unwrap().push(track_id);
+                    finished_tracks_copy.lock().unwrap().push(key);
                     break;
                 }
                 
-                let (track_id, samples) = buffer_receiver.unwrap();
+                let (track_key, samples) = buffer_receiver.unwrap();
 
-                while buffer_remaining_space(&hash_buffer_copy, track_id) < samples.len() {
+                while buffer_remaining_space(&hash_buffer_copy, track_key) < samples.len() {
                     thread::sleep(Duration::from_millis(100));
                 }
 
@@ -41,7 +48,7 @@ pub fn play(file_path: &String) {
                 let mut hash_buffer = hash_buffer_copy.lock().unwrap();
 
                 for sample in samples {
-                    hash_buffer.get_mut(&track_id).unwrap().push(sample);
+                    hash_buffer.get_mut(&track_key).unwrap().push(sample);
                 }
 
                 drop(hash_buffer);
@@ -56,17 +63,17 @@ pub fn play(file_path: &String) {
         loop {
             let mut hash_buffer = hash_buffer_copy.lock().unwrap();
 
-            let mut removable_tracks: Vec<u32> = Vec::new();
+            let mut removable_tracks: Vec<i32> = Vec::new();
             
             // if all buffers are not empty, add samples from each buffer to the mixer
             // until at least one buffer is empty
             let mut all_buffers_full = true;
-            for (track_id, buffer) in hash_buffer.iter() {
+            for (track_key, buffer) in hash_buffer.iter() {
                 // println!("Buffer length: {}", buffer.len());
                 if buffer.len() == 0 {
                     let finished = finished_tracks_copy.lock().unwrap();
-                    if finished.contains(&track_id) {
-                        removable_tracks.push(*track_id);
+                    if finished.contains(&track_key) {
+                        removable_tracks.push(*track_key);
                         continue;
                     }
                     all_buffers_full = false;

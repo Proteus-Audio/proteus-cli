@@ -37,6 +37,7 @@ pub fn parse_prot(file_path: &String) -> (Vec<u32>, Audio) {
                         track_index_array.push(random_number);
                     }
                 });
+            
         }
     });
 
@@ -103,9 +104,9 @@ use std::{sync::mpsc, thread};
 use symphonia::core::errors::Error;
 use log::warn;
 
-pub fn buffer_mka(file_path: &String, track_id: u32) -> mpsc::Receiver<(u32, Vec<f32>)> {
+pub fn buffer_mka(file_path: &String, track_id: u32, track_key: i32) -> mpsc::Receiver<(i32, Vec<f32>)> {
     // Create a channel for sending audio chunks from the decoder to the playback system.
-    let (sender, receiver) = mpsc::sync_channel::<(u32, Vec<f32>)>(1);
+    let (sender, receiver) = mpsc::sync_channel::<(i32, Vec<f32>)>(1);
     let (mut decoder, mut format) = open_mka(file_path);
 
     thread::spawn(move || {
@@ -130,7 +131,7 @@ pub fn buffer_mka(file_path: &String, track_id: u32) -> mpsc::Receiver<(u32, Vec
 
             // If playback is finished, break out of the loop.
             if packet.ts() >= dur.unwrap_or(0) {
-                sender.send((track_id, Vec::new())).unwrap();
+                sender.send((track_key, Vec::new())).unwrap();
                 break Ok(true);
             }
 
@@ -148,7 +149,7 @@ pub fn buffer_mka(file_path: &String, track_id: u32) -> mpsc::Receiver<(u32, Vec
                                 continue;
                             }
 
-                            match sender.send((packet.track_id(), stereo_samples)) {
+                            match sender.send((track_key, stereo_samples)) {
                                 Ok(_) => {}
                                 Err(_) => {
                                     println!("Error sending buffer");
