@@ -18,11 +18,13 @@ pub fn play(file_path: &String) {
     let hash_buffer = init_hash_buffer(&keys, Some(sample_rate as usize));
     let (sender, receiver) = mpsc::sync_channel::<DynamicMixer<f32>>(1);
 
-    // There is undoubtedly a better way to do this, but I'm not sure what it is.
-    let mut index = 0;
-    for track_id in track_index_array {
-        let key = index.clone();
-        index += 1;
+    let enum_track_index_array = track_index_array
+        .iter()
+        .enumerate()
+        // When trying to directly enumerate the track_index_array, the reference dies too early.
+        .map(|(i, v)| (i32::from(i as i32), u32::from(*v)));
+
+    for (key, track_id) in enum_track_index_array {
         let buffer = buffer_mka(file_path, track_id, key);
         let hash_buffer_copy = hash_buffer.clone();
         let finished_tracks_copy = finished_tracks.clone();
