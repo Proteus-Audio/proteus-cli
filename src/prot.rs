@@ -1,10 +1,26 @@
-use matroska::{Matroska, Settings, Audio};
+use matroska::{Audio, Matroska, Settings};
 use rand::Rng;
 use serde_json;
 
-pub fn parse_prot(file_path: &String) -> (Vec<u32>, Audio) {
+pub struct ProtInfo {
+    pub track_index_array: Vec<u32>,
+    pub audio_settings: Audio,
+    pub duration: u64,
+}
+
+pub fn parse_prot(file_path: &String) -> ProtInfo {
     let file = std::fs::File::open(file_path).unwrap();
     let mka: Matroska = Matroska::open(file).expect("Could not open file");
+
+    let reader = get_reader(file_path);
+
+    let first_track = reader.tracks().first().unwrap();
+
+    let tb = first_track.codec_params.time_base.unwrap();
+    let dur = first_track.codec_params.n_frames.map(|frames| first_track.codec_params.start_ts + frames).unwrap();
+    tb.calc_time(dur);
+    // let dur_in_seconds = dur / track.codec_params.sample_rate.unwrap() as u64;
+    // println!("Track duration: {:?}", );
 
     let mut track_index_array: Vec<u32> = Vec::new();
     mka.attachments.iter().for_each(|attachment| {
@@ -37,19 +53,26 @@ pub fn parse_prot(file_path: &String) -> (Vec<u32>, Audio) {
                         track_index_array.push(random_number);
                     }
                 });
-            
         }
     });
 
-    let first_audio_settings = mka.tracks.iter().find_map(|track| {
-        if let Settings::Audio(audio_settings) = &track.settings {
-            Some(audio_settings.clone()) // assuming you want to keep the settings, and they are cloneable
-        } else {
-            None
-        }
-    }).expect("Could not find audio settings");
+    let first_audio_settings = mka
+        .tracks
+        .iter()
+        .find_map(|track| {
+            if let Settings::Audio(audio_settings) = &track.settings {
+                Some(audio_settings.clone()) // assuming you want to keep the settings, and they are cloneable
+            } else {
+                None
+            }
+        })
+        .expect("Could not find audio settings");
 
-    return (track_index_array, first_audio_settings);
+    ProtInfo {
+        track_index_array,
+        audio_settings: first_audio_settings,
+        duration: tb.calc_time(dur).seconds
+    }
 }
 
 use symphonia::core::codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL};
@@ -59,6 +82,13 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
 pub fn open_file(file_path: &String) -> (Box<dyn Decoder>, Box<dyn FormatReader>) {
+    let format = get_reader(file_path);
+    let decoder = get_decoder(&format);
+
+    (decoder, format)
+}
+
+pub fn get_reader(file_path: &String) -> Box<dyn FormatReader> {
     // Open the media source.
     let src = std::fs::File::open(file_path).expect("failed to open media");
 
@@ -88,13 +118,17 @@ pub fn open_file(file_path: &String) -> (Box<dyn Decoder>, Box<dyn FormatReader>
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
         .expect("no supported audio tracks");
 
+    format
+}
+
+pub fn get_decoder(format: &Box<dyn FormatReader>) -> Box<dyn Decoder> {
     // Use the default options for the decoder.
     let dec_opts: DecoderOptions = Default::default();
 
     // Create a decoder for the track.
     let decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &dec_opts)
+        .make(&format.tracks()[0].codec_params, &dec_opts)
         .expect("unsupported codec");
 
-    (decoder, format)
+    decoder
 }
