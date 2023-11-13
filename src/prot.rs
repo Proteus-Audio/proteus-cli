@@ -52,14 +52,13 @@ pub fn parse_prot(file_path: &String) -> (Vec<u32>, Audio) {
     return (track_index_array, first_audio_settings);
 }
 
-use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-pub fn open_mka(file_path: &String) -> (Box<dyn Decoder>, Box<dyn FormatReader>) {
+pub fn open_file(file_path: &String) -> (Box<dyn Decoder>, Box<dyn FormatReader>) {
     // Open the media source.
     let src = std::fs::File::open(file_path).expect("failed to open media");
 
@@ -98,79 +97,4 @@ pub fn open_mka(file_path: &String) -> (Box<dyn Decoder>, Box<dyn FormatReader>)
         .expect("unsupported codec");
 
     (decoder, format)
-}
-
-use std::{sync::mpsc, thread};
-use symphonia::core::errors::Error;
-use log::warn;
-
-pub fn buffer_mka(file_path: &String, track_id: u32, track_key: i32) -> mpsc::Receiver<(i32, Vec<f32>)> {
-    // Create a channel for sending audio chunks from the decoder to the playback system.
-    let (sender, receiver) = mpsc::sync_channel::<(i32, Vec<f32>)>(1);
-    let (mut decoder, mut format) = open_mka(file_path);
-
-    thread::spawn(move || {
-        // Get the selected track using the track ID.
-        let track = format.tracks().iter().find(|track| track.id == track_id).expect("no track found");
-
-        // Get the selected track's timebase and duration.
-        // let tb = track.codec_params.time_base;
-        let dur = track.codec_params.n_frames.map(|frames| track.codec_params.start_ts + frames);
-
-
-        let _result: Result<bool, Error> = loop {
-            // Get the next packet from the format reader.
-            let packet = match format.next_packet() {
-                Ok(packet) => packet,
-                Err(err) => break Err(err),
-            };
-
-            if packet.track_id() != track_id {
-                continue;
-            }
-
-            // If playback is finished, break out of the loop.
-            if packet.ts() >= dur.unwrap_or(0) {
-                sender.send((track_key, Vec::new())).unwrap();
-                break Ok(true);
-            }
-
-            match decoder.decode(&packet) {
-                Ok(decoded) => {
-                    match decoded {
-                        AudioBufferRef::F32(buf) => {
-                            // Convert the interleaved samples to a vector of stereo samples.
-                            // TODO: Support other channel layouts.
-                            let stereo_samples: Vec<f32> = buf.chan(0).to_vec().into_iter().zip(buf.chan(1).to_vec().into_iter())
-                                .flat_map(|(left, right)| vec![left, right])
-                                .collect();
-
-                            if stereo_samples.len() == 0 {
-                                continue;
-                            }
-
-                            match sender.send((track_key, stereo_samples)) {
-                                Ok(_) => {}
-                                Err(_) => {
-                                    println!("Error sending buffer");
-                                }
-                            }
-                        }
-                        _ => {
-                            // Repeat for the different sample formats.
-                            unimplemented!()
-                        }
-                    }
-                }
-                Err(Error::DecodeError(err)) => {
-                    // Decode errors are not fatal. Print the error message and try to decode the next
-                    // packet as usual.
-                    warn!("decode error: {}", err);
-                }
-                Err(err) => break Err(err),
-            }
-        };
-    });
-
-    receiver
 }
