@@ -10,6 +10,7 @@ use crate::prot::*;
 use crate::track::*;
 use crate::buffer::*;
 
+#[derive(Debug, Clone)]
 pub struct Player {
     pub finished_tracks: Arc<Mutex<Vec<i32>>>,
     pub file_path: String,
