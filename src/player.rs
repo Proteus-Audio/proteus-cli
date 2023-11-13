@@ -58,12 +58,12 @@ impl Player {
         let mut ts = self.ts.lock().unwrap();
         *ts = 0;
         drop(ts);
-
         let ts = self.ts.clone();
         let playing = self.playing.clone();
         let paused = self.paused.clone();
         let playback_thread_exists = self.playback_thread_exists.clone();
-
+        
+        println!("timestamp_thread: {}, {}, {}", playing.load(Ordering::SeqCst), paused.load(Ordering::SeqCst), playback_thread_exists.load(Ordering::SeqCst));
         thread::spawn(move || {
             loop {
                 // let mut playing = playing.lock().unwrap();
@@ -73,6 +73,7 @@ impl Player {
                 let pause_value = paused.load(Ordering::SeqCst);
 
                 if !play_value && !pause_value {
+                    *ts = 0;
                     break;
                 }
 
@@ -82,6 +83,7 @@ impl Player {
 
                 let thread_exists = playback_thread_exists.load(Ordering::SeqCst);
                 if !thread_exists {
+                    *ts = 0;
                     playing.store(false, Ordering::SeqCst);
                     break;
                 }
@@ -104,6 +106,7 @@ impl Player {
         // ===== Set play options ===== //
         self.playing.store(false, Ordering::SeqCst);
         self.paused.store(true, Ordering::SeqCst);
+        self.playback_thread_exists.store(true, Ordering::SeqCst);
 
         let playing = self.playing.clone();
         let paused = self.paused.clone();
