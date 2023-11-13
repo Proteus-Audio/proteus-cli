@@ -103,7 +103,7 @@ impl Player {
 
         // ===== Set play options ===== //
         self.playing.store(false, Ordering::SeqCst);
-        self.paused.store(false, Ordering::SeqCst);
+        self.paused.store(true, Ordering::SeqCst);
 
         let playing = self.playing.clone();
         let paused = self.paused.clone();
