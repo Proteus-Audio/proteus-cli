@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
+use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use dasp_ring_buffer::Bounded;
 use std::sync::{Mutex, Arc};
@@ -18,7 +20,7 @@ pub struct TrackArgs {
     pub finished_tracks: Arc<Mutex<Vec<i32>>>,
 }
 
-pub fn buffer_track(args: TrackArgs) -> Arc<Mutex<bool>> {
+pub fn buffer_track(args: TrackArgs, abort: Arc<AtomicBool>) -> Arc<Mutex<bool>> {
     let TrackArgs { file_path, track_id, track_key, buffer_map, finished_tracks } = args;
     // Create a channel for sending audio chunks from the decoder to the playback system.
     let (mut decoder, mut format) = open_file(&file_path);
@@ -34,6 +36,10 @@ pub fn buffer_track(args: TrackArgs) -> Arc<Mutex<bool>> {
 
 
         let _result: Result<bool, Error> = loop {
+            if abort.load(std::sync::atomic::Ordering::Relaxed) {
+                break Ok(true);
+            }
+
             // Get the next packet from the format reader.
             let packet = match format.next_packet() {
                 Ok(packet) => packet,
@@ -93,8 +99,7 @@ pub fn buffer_track(args: TrackArgs) -> Arc<Mutex<bool>> {
     return playing;
 }
 
-fn add_samples_to_buffer_map(buffer_map: &mut Arc<Mutex<HashMap<i32, Bounded<Vec<f32>>>>>, track_key: i32, samples: Vec<f32>) {
-
+fn add_samples_to_buffer_map(buffer_map: &mut Arc<Mutex<HashMap<i32, Bounded<Vec<f32>>>>>, track_key: i32, samples: Vec<f32>) {    
     while buffer_remaining_space(buffer_map, track_key) < samples.len() {
         thread::sleep(Duration::from_millis(100));
     }

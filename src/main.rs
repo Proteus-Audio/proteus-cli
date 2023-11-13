@@ -91,8 +91,7 @@ fn run(args: &ArgMatches) -> Result<i32> {
     }
 
     // let sink_mutex = output::play(file_path);
-    let player = player::Player::new(file_path);
-    println!("Hey there!!");
+    let mut player = player::Player::new(file_path);
 
     player.play();
 
