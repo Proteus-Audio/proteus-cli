@@ -39,6 +39,9 @@ pub fn parse_prot(file_path: &String) -> ProtInfo {
                 .for_each(|track| {
                     if let Some(_version) = encoder_version {
                         let indexes = track["ids"].as_array().unwrap();
+                        if indexes.len() == 0 {
+                            return;
+                        }
                         let random_number = rand::thread_rng().gen_range(0..indexes.len());
                         let index = indexes[random_number].to_string().parse::<u32>().unwrap();
                         track_index_array.push(index);
