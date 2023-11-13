@@ -90,10 +90,38 @@ fn run(args: &ArgMatches) -> Result<i32> {
         panic!("File is not a .prot file");
     }
 
-    // let sink_mutex = output::play(file_path);
     let mut player = player::Player::new(file_path);
-
+    
     player.play();
+    
+    
+    // let thread_start = std::time::Instant::now();
+    // loop {
+    //     if thread_start.elapsed().as_secs() >= 2 && player.is_playing() && thread_start.elapsed().as_secs() < 3 {
+    //         player.pause();
+    //     }
+
+    //     if thread_start.elapsed().as_secs() >= 3 && !player.is_playing() && thread_start.elapsed().as_secs() < 4 {
+    //         println!("Playing");
+    //         player.play();
+    //         println!("Playing {:?}", player.is_playing());
+    //     }
+
+    //     if thread_start.elapsed().as_secs() >= 5 && player.is_playing() && thread_start.elapsed().as_secs() < 6 {
+    //         println!("Pausing");
+    //         player.stop();
+    //     }
+
+    //     if thread_start.elapsed().as_secs() >= 6 && !player.is_playing() && thread_start.elapsed().as_secs() < 7 {
+    //         player.play();
+    //     }
+
+    //     if thread_start.elapsed().as_secs() >= 8 && player.is_finished() {
+    //         break;
+    //     }
+
+    //     std::thread::sleep(std::time::Duration::from_millis(100));
+    // }
 
     while !player.is_finished() {
         println!("{} / {}", format_time(player.get_time() * 10), format_time((player.get_duration() * 1000) as u32));
