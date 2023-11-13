@@ -1,12 +1,7 @@
 use clap::{Arg, ArgMatches};
 use symphonia::core::errors::Result;
 use log::error;
-
-mod constants;
-mod player;
-mod prot;
-mod buffer;
-mod track;
+use proteus_audio::player;
 
 fn main() {
     let args = clap::Command::new("Prot Play")
