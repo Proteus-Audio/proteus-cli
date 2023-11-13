@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use dasp_ring_buffer::Bounded;
 use std::sync::{Mutex, Arc};
-use std::{sync::mpsc, thread};
+use std::thread;
 use symphonia::core::errors::Error;
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use log::warn;
