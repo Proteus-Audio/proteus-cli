@@ -112,7 +112,7 @@ pub fn get_reader(file_path: &String) -> Box<dyn FormatReader> {
     let format = probed.format;
 
     // Find the first audio track with a known (decodeable) codec.
-    let track = format
+    format
         .tracks()
         .iter()
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
