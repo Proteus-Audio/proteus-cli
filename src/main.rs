@@ -84,7 +84,40 @@ fn run(args: &ArgMatches) -> Result<i32> {
         panic!("File is not a .prot file");
     }
 
-    output::play(file_path);
+    let thread_start_time = std::time::Instant::now();
+    let sink_mutex = output::play(file_path);
+
+    // Start sink
+    let mut sink_started = false;
+    // let sink = sink_mutex.lock().unwrap();
+    // sink.play();
+    // drop(sink);
+
+    loop {
+        let sink = sink_mutex.lock().unwrap();
+        println!("Sink Len: {:?}", sink.len());
+        if !sink_started && sink.len() > 0 {
+            sink.play();
+            sink_started = true;
+            // sink.sleep_until_end();
+        }
+        let elapsed = thread_start_time.elapsed();
+        let seconds = elapsed.as_secs();
+        let nanos = elapsed.subsec_nanos();
+        let time = seconds as f64 + nanos as f64 / 1_000_000_000.0;
+        let time_str = format!("{:.2}", time);
+        let time_str = time_str.as_str();
+        let time_str = time_str.trim_end_matches("0");
+        let time_str = time_str.trim_end_matches(".");
+        println!("Time: {}", time_str);
+        drop(sink);
+
+        if thread_start_time.elapsed().as_secs() > 10 {
+            break;
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 
     Ok(0)
 }

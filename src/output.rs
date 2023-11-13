@@ -5,18 +5,21 @@ use crate::prot::*;
 use crate::track::*;
 use crate::buffer::*;
 
-pub fn play(file_path: &String) {
+pub fn play(file_path: &String) -> Arc<Mutex<Sink>> {
     let finished_tracks = Arc::new(Mutex::new(Vec::new()));
 
     let (track_index_array, audio_settings) = parse_prot(file_path);
     let sample_rate = audio_settings.sample_rate;
 
+    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+    let sink_mutex: Arc<Mutex<Sink>> = Arc::new(Mutex::new(Sink::try_new(&stream_handle).expect("failed to create sink")));
+    let sink = Sink::try_new(&stream_handle).expect("failed to create sink");
     // TODO: Support other channel layouts.
     // let channels = audio_settings.channels;
 
     let keys: Vec<i32> = track_index_array.iter().enumerate().map(|(i, _v)| i as i32).collect();
 
-    let hash_buffer = init_hash_buffer(&keys, Some(sample_rate as usize));
+    let buffer_map: Arc<Mutex<std::collections::HashMap<i32, dasp_ring_buffer::Bounded<Vec<f32>>>>> = init_hash_buffer(&keys, Some(sample_rate as usize));
     let (sender, receiver) = mpsc::sync_channel::<DynamicMixer<f32>>(1);
 
     let enum_track_index_array = track_index_array
@@ -25,6 +28,7 @@ pub fn play(file_path: &String) {
         // When trying to directly enumerate the track_index_array, the reference dies too early.
         .map(|(i, v)| (i32::from(i as i32), u32::from(*v)));
 
+    let playing_map: Arc<Mutex<std::collections::HashMap<i32, Arc<Mutex<bool>>>>> = Arc::new(Mutex::new(std::collections::HashMap::new()));
 
     for (key, track_id) in enum_track_index_array {
         let playing = buffer_track(TrackArgs{
@@ -34,10 +38,15 @@ pub fn play(file_path: &String) {
             buffer_map: buffer_map.clone(),
             finished_tracks: finished_tracks.clone(),
         });
+
+        let mut playing_map = playing_map.lock().unwrap();
+        playing_map.insert(key, playing);
+        drop(playing_map);
     }
 
+    let sink_mutex_copy = sink_mutex.clone();
     thread::spawn(move || {
-        let hash_buffer_copy = hash_buffer.clone();
+        let hash_buffer_copy = buffer_map.clone();
         let finished_tracks_copy = finished_tracks.clone();
 
         loop {
@@ -85,7 +94,10 @@ pub fn play(file_path: &String) {
                     controller.add(source.convert_samples().amplify(0.2));
                 }
                 
-                sender.clone().send(mixer).unwrap();
+                let sink = sink_mutex_copy.lock().unwrap();
+                sink.append(mixer);
+                println!("sink: {:?}", sink.len());
+                drop(sink);
             }
             
             drop(hash_buffer);
@@ -93,17 +105,10 @@ pub fn play(file_path: &String) {
             thread::sleep(Duration::from_millis(100));
         }
     });
-    
-    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-    let sink = Sink::try_new(&stream_handle).expect("failed to create sink");
 
-    for received in receiver {
-        sink.append(received);
-    }
+    // for received in receiver {
+    //     sink.append(received);
+    // }
 
-    thread::sleep(Duration::from_secs(1));
-
-    // Sleep the thread until sink is empty.
-    sink.sleep_until_end();
-
+    sink_mutex
 }
