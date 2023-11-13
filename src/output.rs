@@ -16,7 +16,7 @@ pub fn play(file_path: &String) {
 
     let keys: Vec<i32> = track_index_array.iter().enumerate().map(|(i, _v)| i as i32).collect();
 
-    let hash_buffer = init_hash_buffer(&keys, Some(sample_rate as usize));
+    let buffer_map = init_hash_buffer(&keys, Some(sample_rate as usize));
     let (sender, receiver) = mpsc::sync_channel::<DynamicMixer<f32>>(1);
 
     let enum_track_index_array = track_index_array
@@ -37,7 +37,7 @@ pub fn play(file_path: &String) {
     }
 
     thread::spawn(move || {
-        let hash_buffer_copy = hash_buffer.clone();
+        let hash_buffer_copy = buffer_map.clone();
         let finished_tracks_copy = finished_tracks.clone();
 
         loop {
