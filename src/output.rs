@@ -2,6 +2,7 @@ use rodio::{buffer::SamplesBuffer, OutputStream, Sink, Source, dynamic_mixer::{s
 use std::{sync::{mpsc, Arc, Mutex}, thread, time::Duration};
 
 use crate::prot::*;
+use crate::track::*;
 use crate::buffer::*;
 
 pub fn play(file_path: &String) {
@@ -24,37 +25,14 @@ pub fn play(file_path: &String) {
         // When trying to directly enumerate the track_index_array, the reference dies too early.
         .map(|(i, v)| (i32::from(i as i32), u32::from(*v)));
 
+
     for (key, track_id) in enum_track_index_array {
-        let buffer = buffer_mka(file_path, track_id, key);
-        let hash_buffer_copy = hash_buffer.clone();
-        let finished_tracks_copy = finished_tracks.clone();
-        // let source = SamplesBuffer::new(2, 44100, Vec::<f32>::new());
-        // source.
-        thread::spawn(move || {
-            loop {
-                // println!("track_index: {}", this_index);
-                let buffer_receiver = buffer.recv();
-                if buffer_receiver.is_err() {
-                    // Channel hung up, so add track_id to finished_tracks
-                    finished_tracks_copy.lock().unwrap().push(key);
-                    break;
-                }
-                
-                let (track_key, samples) = buffer_receiver.unwrap();
-
-                while buffer_remaining_space(&hash_buffer_copy, track_key) < samples.len() {
-                    thread::sleep(Duration::from_millis(100));
-                }
-
-
-                let mut hash_buffer = hash_buffer_copy.lock().unwrap();
-
-                for sample in samples {
-                    hash_buffer.get_mut(&track_key).unwrap().push(sample);
-                }
-
-                drop(hash_buffer);
-            }
+        let playing = buffer_track(TrackArgs{
+            file_path: file_path.clone(),
+            track_id,
+            track_key: key,
+            buffer_map: buffer_map.clone(),
+            finished_tracks: finished_tracks.clone(),
         });
     }
 

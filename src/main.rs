@@ -6,6 +6,7 @@ mod constants;
 mod output;
 mod prot;
 mod buffer;
+mod track;
 
 fn main() {
     let args = clap::Command::new("Prot Play")
