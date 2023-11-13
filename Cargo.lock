@@ -739,7 +739,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "proteus-cli"
+name = "proteus_audio"
 version = "0.1.0"
 dependencies = [
  "clap",
