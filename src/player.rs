@@ -7,7 +7,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 
-use crate::{prot::*, constants};
+use crate::prot::*;
 use crate::track::*;
 use crate::buffer::*;
 
@@ -16,8 +16,8 @@ pub struct Player {
     pub finished_tracks: Arc<Mutex<Vec<i32>>>,
     pub file_path: String,
     pub ts: Arc<Mutex<u32>>,
-    playing: Arc<Mutex<bool>>,
-    paused: Arc<Mutex<bool>>,
+    playing: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     playback_thread_exists: Arc<AtomicBool>,
     duration: Arc<Mutex<u64>>,
     track_index_array: Arc<Mutex<Vec<u32>>>,
@@ -38,8 +38,8 @@ impl Player {
         let mut this = Self {
             finished_tracks: Arc::new(Mutex::new(Vec::new())),
             file_path: file_path.clone(),
-            playing: Arc::new(Mutex::new(false)),
-            paused: Arc::new(Mutex::new(false)),
+            playing: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
             ts: Arc::new(Mutex::new(0)),
             playback_thread_exists: Arc::new(AtomicBool::new(true)),
             duration: Arc::new(Mutex::new(duration)),
@@ -49,10 +49,6 @@ impl Player {
         };
 
         this.initialize_thread();
-
-        // let playback_thread_exists = this.playback_thread_exists.lock().unwrap();
-        // println!("Player initialized: {}", playback_thread_exists);
-        // drop(playback_thread_exists);
 
         this
     }
@@ -66,26 +62,30 @@ impl Player {
         let ts = self.ts.clone();
         let playing = self.playing.clone();
         let paused = self.paused.clone();
-        let finished_tracks = self.finished_tracks.clone();
+        let playback_thread_exists = self.playback_thread_exists.clone();
 
         thread::spawn(move || {
             loop {
-                let playing = playing.lock().unwrap();
-                let paused = paused.lock().unwrap();
-                let finished_tracks = finished_tracks.lock().unwrap();
+                // let mut playing = playing.lock().unwrap();
+                // let paused = paused.lock().unwrap();
                 let mut ts = ts.lock().unwrap();
+                let play_value = playing.load(Ordering::SeqCst);
+                let pause_value = paused.load(Ordering::SeqCst);
 
-                if !*playing && !*paused {
+                if !play_value && !pause_value {
                     break;
                 }
 
-                if *playing && !*paused {
+                if play_value && !pause_value {
                     *ts += 1;
                 }
 
-                drop(playing);
-                drop(paused);
-                drop(finished_tracks);
+                let thread_exists = playback_thread_exists.load(Ordering::SeqCst);
+                if !thread_exists {
+                    playing.store(false, Ordering::SeqCst);
+                    break;
+                }
+
                 drop(ts);
 
                 thread::sleep(Duration::from_millis(10));
@@ -102,14 +102,8 @@ impl Player {
         let finished_tracks = self.finished_tracks.clone();
 
         // ===== Set play options ===== //
-        let mut playing = self.playing.lock().unwrap();
-        let mut paused = self.paused.lock().unwrap();
-        
-        *playing = false;
-        *paused = true;
-        
-        drop(playing);
-        drop(paused);
+        self.playing.store(false, Ordering::SeqCst);
+        self.paused.store(false, Ordering::SeqCst);
 
         let playing = self.playing.clone();
         let paused = self.paused.clone();
@@ -135,7 +129,6 @@ impl Player {
 
         // ===== Start playback ===== //
         thread::spawn(move || {
-            println!("Starting playback thread");
             playback_thread_exists.store(true, Ordering::Relaxed);
 
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
@@ -175,7 +168,6 @@ impl Player {
                     // until at least one buffer is empty
                     let mut all_buffers_full = true;
                     for (track_key, buffer) in hash_buffer.iter() {
-                        // println!("Buffer length: {}", buffer.len());
                         if buffer.len() == 0 {
                             let finished = finished_tracks_copy.lock().unwrap();
                             if finished.contains(&track_key) {
@@ -206,7 +198,6 @@ impl Player {
                             }
     
                             
-                            // println!("samples: {:?}", samples);
                             let source = SamplesBuffer::new(2, sample_rate as u32, samples);
                             controller.add(source.convert_samples().amplify(0.2));
                         }
@@ -227,44 +218,33 @@ impl Player {
             for received in receiver {
                 sink.append(received);
 
-                let playing = playing.lock().unwrap();
-                let paused = paused.lock().unwrap();
-                if !*playing && !*paused {
+                if !playing.load(Ordering::SeqCst) && !paused.load(Ordering::SeqCst) {
                     abort.store(true, Ordering::Relaxed);
                     sink.clear();
                     break;
                 }
                 
-                if *paused && !sink.is_paused() {
+                if paused.load(Ordering::SeqCst) && !sink.is_paused() {
                     sink.pause();
                 } 
-                if !*paused && sink.is_paused() {
+                if !paused.load(Ordering::SeqCst) && sink.is_paused() {
                     sink.play();
                 }
-                
-                drop(playing);
-                drop(paused);
             }
             
             loop {
-                let playing = playing.lock().unwrap();
-                let paused = paused.lock().unwrap();
-
-                if !*playing && !*paused {
+                if !playing.load(Ordering::SeqCst) && !paused.load(Ordering::SeqCst) {
                     abort.store(true, Ordering::Relaxed);
                     sink.clear();
                     break;
                 }
 
-                if *paused && !sink.is_paused() {
+                if paused.load(Ordering::SeqCst) && !sink.is_paused() {
                     sink.pause();
                 } 
-                if !*paused && sink.is_paused() {
+                if !paused.load(Ordering::SeqCst) && sink.is_paused() {
                     sink.play();
                 }
-                
-                drop(playing);
-                drop(paused);
 
 
                 // If all tracks are finished buffering and sink is finished playing, exit the loop
@@ -295,73 +275,41 @@ impl Player {
             self.initialize_thread();
         }
 
-        // ===== Set play options ===== //
-        let mut playing = self.playing.lock().unwrap();
-        let mut paused = self.paused.lock().unwrap();
-        
-        *playing = true;
-        *paused = false;
-        
-        drop(playing);
-        drop(paused);
+        self.resume();
     }
 
     pub fn pause(&self) {
-        let mut paused = self.paused.lock().unwrap();
-        let mut playing = self.playing.lock().unwrap();
-
-        *paused = true;
-        *playing = false;
-        
-        drop(paused);
-        drop(playing);
+        self.playing.store(false, Ordering::SeqCst);
+        self.paused.store(true, Ordering::SeqCst);
     }
 
     pub fn resume(&self) {
-        let mut playing = self.playing.lock().unwrap();
-        let mut paused = self.paused.lock().unwrap();
-        
-        *playing = true;
-        *paused = false;
-        
-        drop(playing);
-        drop(paused);
+        self.playing.store(true, Ordering::SeqCst);
+        self.paused.store(false, Ordering::SeqCst);
     }
 
     pub fn stop(&self) {
-        let mut playing = self.playing.lock().unwrap();
-        let mut paused = self.paused.lock().unwrap();
         let mut buffer_map = self.buffer_map.lock().unwrap();
-        
-        *playing = false;
-        *paused = false;
+        self.playing.store(false, Ordering::SeqCst);
+        self.paused.store(false, Ordering::SeqCst);
 
         buffer_map.clear();
-        
-        drop(playing);
-        drop(paused);
+
         drop (buffer_map);
-        
-        println!("Stopping");
 
         while !self.is_finished() {
             thread::sleep(Duration::from_millis(10));
         }
 
-        println!("Stopped");
-
         self.reset();
     }
 
     pub fn is_playing(&self) -> bool {
-        let playing = self.playing.lock().unwrap();
-        // let paused = self.paused.lock().unwrap();
-        *playing
+        self.playing.load(Ordering::SeqCst)
     }
 
     pub fn is_paused(&self) -> bool {
-        let paused = self.paused.lock().unwrap();
-        *paused
+        self.paused.load(Ordering::SeqCst)
     }
 
     pub fn get_time(&self) -> u32 {
