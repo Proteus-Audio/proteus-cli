@@ -1,7 +1,15 @@
 [package]
-name = "proteus-cli"
+name = "proteus_audio"
 version = "0.1.0"
 edition = "2021"
+authors = ["Adam Thomas Howard <adamthomashoward@gmail.com>"]
+license = "Apache-2.0"
+description = "A command line utility and library for playing .prot audio files."
+readme = "README.md"
+homepage = "https://github.com/Proteus-Audio/proteus-cli"
+repository = "https://github.com/Proteus-Audio/proteus-cli"
+keywords = ["proteus", "audio", "matroska", "multimedia", "media"]
+categories = ["command-line-utilities", "multimedia", "multimedia::audio"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

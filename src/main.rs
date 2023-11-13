@@ -1,12 +1,7 @@
 use clap::{Arg, ArgMatches};
 use symphonia::core::errors::Result;
 use log::error;
-
-mod constants;
-mod player;
-mod prot;
-mod buffer;
-mod track;
+use proteus_audio::player;
 
 fn main() {
     let args = clap::Command::new("Prot Play")
@@ -76,7 +71,7 @@ fn main() {
 
 fn format_time(time: u32) -> String {
     // Seconds rounded up
-    let seconds = (time as f32 / 100.0).ceil() as u32;
+    let seconds = (time as f32 / 1000.0).ceil() as u32;
     let minutes = seconds / 60;
     let seconds = seconds % 60;
     let hours = minutes / 60;
@@ -95,50 +90,14 @@ fn run(args: &ArgMatches) -> Result<i32> {
         panic!("File is not a .prot file");
     }
 
-    let thread_start_time = std::time::Instant::now();
     // let sink_mutex = output::play(file_path);
     let player = player::Player::new(file_path);
     println!("Hey there!!");
 
     player.play();
 
-    // Start sink
-    let mut sink_started = false;
-    // let sink = sink_mutex.lock().unwrap();
-    // sink.play();
-    // drop(sink);
-
-    loop {
-        // let sink = sink_mutex.lock().unwrap();
-        // println!("Sink Len: {:?}", sink.len());
-        // if !sink_started && sink.len() > 0 {
-        //     sink.play();
-        //     sink_started = true;
-        //     // sink.sleep_until_end();
-        // }
-        // let elapsed = thread_start_time.elapsed();
-        // let seconds = elapsed.as_secs();
-        // let nanos = elapsed.subsec_nanos();
-        // let time = seconds as f64 + nanos as f64 / 1_000_000_000.0;
-        // let time_str = format!("{:.2}", time);
-        // let time_str = time_str.as_str();
-        // let time_str = time_str.trim_end_matches("0");
-        // let time_str = time_str.trim_end_matches(".");
-        println!("Time: {}", format_time(player.get_time()));
-
-        // drop(sink);
-        println!("Playing: {}", player.is_playing());
-        
-        if thread_start_time.elapsed().as_secs() > 10 && player.is_playing() {
-            player.pause();
-            // break;
-        }
-
-        if thread_start_time.elapsed().as_secs() > 12 && !player.is_playing() {
-            player.play();
-            // break;
-        }
-
+    while !player.is_finished() {
+        println!("{} / {}", format_time(player.get_time() * 10), format_time((player.get_duration() * 1000) as u32));
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
