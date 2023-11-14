@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use dasp_ring_buffer::Bounded;
 use std::sync::{Mutex, Arc};

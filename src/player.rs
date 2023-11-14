@@ -7,19 +7,20 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 
-use crate::prot::*;
+use crate::{prot::*, info::Info};
 use crate::track::*;
 use crate::buffer::*;
 
 #[derive(Debug, Clone)]
 pub struct Player {
+    pub info: Info,
     pub finished_tracks: Arc<Mutex<Vec<i32>>>,
     pub file_path: String,
     pub ts: Arc<Mutex<u32>>,
     playing: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     playback_thread_exists: Arc<AtomicBool>,
-    duration: Arc<Mutex<u64>>,
+    duration: Arc<Mutex<f64>>,
     track_index_array: Arc<Mutex<Vec<u32>>>,
     audio_settings: Audio,
     buffer_map: Arc<Mutex<HashMap<i32, Bounded<Vec<f32>>>>>,
@@ -27,15 +28,18 @@ pub struct Player {
 
 impl Player {
     pub fn new(file_path: &String) -> Self {
+        let info = Info::new(file_path.clone());
+
         let ProtInfo { 
             track_index_array,
             audio_settings ,
             duration
-        } = parse_prot(&file_path);
+        } = parse_prot(&file_path, &info);
 
         let buffer_map = init_buffer_map();
 
         let mut this = Self {
+            info,
             finished_tracks: Arc::new(Mutex::new(Vec::new())),
             file_path: file_path.clone(),
             playing: Arc::new(AtomicBool::new(false)),
@@ -205,7 +209,7 @@ impl Player {
                             controller.add(source.convert_samples().amplify(0.2));
                         }
                         
-                        sender.send(mixer);
+                        sender.send(mixer).unwrap();
                     }
                     
                     drop(hash_buffer);
@@ -334,7 +338,7 @@ impl Player {
         }
     }
 
-    pub fn get_duration(&self) -> u64 {
+    pub fn get_duration(&self) -> f64 {
         let duration = self.duration.lock().unwrap();
         *duration
     }
@@ -354,9 +358,9 @@ impl Player {
     pub fn shuffle(&self) {
         let ProtInfo { 
             track_index_array,
-            audio_settings ,
-            duration
-        } = parse_prot(&self.file_path);
+            audio_settings: _,
+            duration: _
+        } = parse_prot(&self.file_path, &self.info);
 
         let mut self_track_index_array = self.track_index_array.lock().unwrap();
         self_track_index_array.clone_from(&track_index_array);
@@ -369,9 +373,9 @@ impl Player {
     fn reset (&self) {
         let ProtInfo { 
             track_index_array,
-            audio_settings ,
-            duration
-        } = parse_prot(&self.file_path);
+            audio_settings: _,
+            duration: _
+        } = parse_prot(&self.file_path, &self.info);
 
         let mut self_track_index_array = self.track_index_array.lock().unwrap();
         self_track_index_array.clone_from(&track_index_array);

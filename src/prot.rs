@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use matroska::{Audio, Matroska, Settings};
 use rand::Rng;
 use serde_json;
@@ -5,12 +7,15 @@ use serde_json;
 pub struct ProtInfo {
     pub track_index_array: Vec<u32>,
     pub audio_settings: Audio,
-    pub duration: u64,
+    pub duration: f64,
 }
 
-pub fn parse_prot(file_path: &String) -> ProtInfo {
+pub fn parse_prot(file_path: &String, info: &Info) -> ProtInfo {
     let file = std::fs::File::open(file_path).unwrap();
     let mka: Matroska = Matroska::open(file).expect("Could not open file");
+
+    let fallback_duration = mka.info.duration.unwrap_or(Duration::new(0, 0)).as_secs_f64();
+    let mut duration = 0.0 as f64;
 
     let reader = get_reader(file_path);
 
@@ -44,6 +49,12 @@ pub fn parse_prot(file_path: &String) -> ProtInfo {
                         }
                         let random_number = rand::thread_rng().gen_range(0..indexes.len());
                         let index = indexes[random_number].to_string().parse::<u32>().unwrap();
+                        if let Some(track_duration) = info.get_duration(index) {
+                            if track_duration > duration {
+                                duration = track_duration;
+                                println!("Track {} duration: {:?}", index, duration)
+                            } 
+                        }
                         track_index_array.push(index);
                     } else {
                         let starting_index =
@@ -51,9 +62,16 @@ pub fn parse_prot(file_path: &String) -> ProtInfo {
                         let length = track["length"].to_string().parse::<u32>().unwrap();
 
                         // Get random number between starting_index and starting_index + length
-                        let random_number =
+                        let index =
                             rand::thread_rng().gen_range(starting_index..(starting_index + length));
-                        track_index_array.push(random_number);
+
+                        if let Some(track_duration) = info.get_duration(index) {
+                            if track_duration > duration {
+                                duration = track_duration;
+                            } 
+                        }
+
+                        track_index_array.push(index);
                     }
                 });
         }
@@ -71,10 +89,16 @@ pub fn parse_prot(file_path: &String) -> ProtInfo {
         })
         .expect("Could not find audio settings");
 
+    let prot_duration = if duration > 0.0 {
+        duration
+    } else {
+        fallback_duration
+    };
+
     ProtInfo {
         track_index_array,
         audio_settings: first_audio_settings,
-        duration: tb.calc_time(dur).seconds
+        duration: prot_duration
     }
 }
 
@@ -83,6 +107,8 @@ use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
+
+use crate::info::Info;
 
 pub fn open_file(file_path: &String) -> (Box<dyn Decoder>, Box<dyn FormatReader>) {
     let format = get_reader(file_path);

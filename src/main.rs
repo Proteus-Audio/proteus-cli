@@ -1,7 +1,7 @@
 use clap::{Arg, ArgMatches};
-use symphonia::core::errors::Result;
 use log::error;
 use proteus_audio::player;
+use symphonia::core::errors::Result;
 
 fn main() {
     let args = clap::Command::new("Prot Play")
@@ -17,7 +17,11 @@ fn main() {
                 .conflicts_with_all(&["verify", "decode-only", "verify-only", "probe-only"]),
         )
         .arg(
-            Arg::new("track").long("track").short('t').value_name("TRACK").help("The track to use"),
+            Arg::new("track")
+                .long("track")
+                .short('t')
+                .value_name("TRACK")
+                .help("The track to use"),
         )
         .arg(
             Arg::new("decode-only")
@@ -43,9 +47,15 @@ fn main() {
                 .short('v')
                 .help("Verify the decoded audio is valid during playback"),
         )
-        .arg(Arg::new("no-progress").long("no-progress").help("Do not display playback progress"))
         .arg(
-            Arg::new("no-gapless").long("no-gapless").help("Disable gapless decoding and playback"),
+            Arg::new("no-progress")
+                .long("no-progress")
+                .help("Do not display playback progress"),
+        )
+        .arg(
+            Arg::new("no-gapless")
+                .long("no-gapless")
+                .help("Disable gapless decoding and playback"),
         )
         .arg(Arg::new("debug").short('d').help("Show debug output"))
         .arg(
@@ -55,7 +65,6 @@ fn main() {
                 .index(1),
         )
         .get_matches();
-
 
     // For any error, return an exit code -1. Otherwise return the exit code provided.
     let code = match run(&args) {
@@ -82,7 +91,7 @@ fn format_time(time: u32) -> String {
 
 fn run(args: &ArgMatches) -> Result<i32> {
     let file_path = args.get_one::<String>("INPUT").unwrap();
-    
+
     println!("file_path: {:?}", file_path);
 
     // If file is not a .mka file, return an error
@@ -91,10 +100,9 @@ fn run(args: &ArgMatches) -> Result<i32> {
     }
 
     let mut player = player::Player::new(file_path);
-    
+
     player.play();
-    
-    
+
     // let thread_start = std::time::Instant::now();
     // loop {
     //     if thread_start.elapsed().as_secs() >= 2 && player.is_playing() && thread_start.elapsed().as_secs() < 3 {
@@ -119,14 +127,17 @@ fn run(args: &ArgMatches) -> Result<i32> {
     //         break;
     //     }
 
-
     //     println!("{} / {}", format_time(player.get_time() * 10), format_time((player.get_duration() * 1000) as u32));
 
     //     std::thread::sleep(std::time::Duration::from_millis(500));
     // }
 
     while !player.is_finished() {
-        println!("{} / {}", format_time(player.get_time() * 10), format_time((player.get_duration() * 1000) as u32));
+        println!(
+            "{} / {}",
+            format_time(player.get_time() * 10),
+            format_time((player.get_duration() * 1000.0) as u32)
+        );
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
