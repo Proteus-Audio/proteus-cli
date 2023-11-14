@@ -105,13 +105,18 @@ impl Player {
         let sample_rate = self.audio_settings.sample_rate;
 
         let file_path = String::from(self.file_path.clone());
-        let finished_tracks = self.finished_tracks.clone();
-
+        // Empty finished_tracks
+        let mut finished_tracks = self.finished_tracks.lock().unwrap();
+        finished_tracks.clear();
+        drop(finished_tracks);
+        
         // ===== Set play options ===== //
         self.playing.store(false, Ordering::SeqCst);
         self.paused.store(true, Ordering::SeqCst);
         self.playback_thread_exists.store(true, Ordering::SeqCst);
-
+        
+        // ===== Clone variables ===== //
+        let finished_tracks = self.finished_tracks.clone();
         let playing = self.playing.clone();
         let paused = self.paused.clone();
 
