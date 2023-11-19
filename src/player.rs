@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::tools::parse_prot;
-use crate::{info::Info, prot::PlayerEngine};
+use crate::{info::Info, player_engine::PlayerEngine};
 
 #[derive(Debug, Clone)]
 pub struct Player {
