@@ -9,7 +9,7 @@ use symphonia::core::audio::{AudioBufferRef, Signal};
 use log::warn;
 
 use crate::buffer::buffer_remaining_space;
-use crate::prot::open_file;
+use crate::tools::open_file;
 
 pub struct TrackArgs {
     pub file_path: String,
