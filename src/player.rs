@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use crate::prot;
 use crate::tools::parse_prot;
 use crate::{info::Info, player_engine::PlayerEngine};
 
@@ -19,12 +20,13 @@ pub struct Player {
     stop: Arc<AtomicBool>,
     playback_thread_exists: Arc<AtomicBool>,
     duration: Arc<Mutex<f64>>,
+    prot: prot::Prot,
 }
 
 impl Player {
     pub fn new(file_path: &String) -> Self {
         let info = Info::new(file_path.clone());
-        let prot_info = parse_prot(&file_path, &info);
+        let prot = prot::Prot::new(file_path);
 
         let mut this = Self {
             info,
@@ -36,6 +38,7 @@ impl Player {
             playback_thread_exists: Arc::new(AtomicBool::new(true)),
             duration: Arc::new(Mutex::new(0.0)),
             stop: Arc::new(AtomicBool::new(false)),
+            prot
         };
 
         this.initialize_thread();
