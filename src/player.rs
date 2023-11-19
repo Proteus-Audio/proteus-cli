@@ -5,8 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::prot;
-use crate::tools::parse_prot;
+use crate::prot::Prot;
 use crate::{info::Info, player_engine::PlayerEngine};
 
 #[derive(Debug, Clone)]
@@ -20,13 +19,13 @@ pub struct Player {
     stop: Arc<AtomicBool>,
     playback_thread_exists: Arc<AtomicBool>,
     duration: Arc<Mutex<f64>>,
-    prot: prot::Prot,
+    prot: Arc<Mutex<Prot>>,
 }
 
 impl Player {
     pub fn new(file_path: &String) -> Self {
         let info = Info::new(file_path.clone());
-        let prot = prot::Prot::new(file_path);
+        let prot = Arc::new(Mutex::new(Prot::new(file_path)));
 
         let mut this = Self {
             info,
@@ -41,14 +40,12 @@ impl Player {
             prot
         };
 
-        this.initialize_thread();
+        this.initialize_thread(None);
 
         this
     }
 
-    fn initialize_thread(&mut self) {
-        // ===== Setup ===== //
-        let file_path = String::from(self.file_path.clone());
+    fn initialize_thread(&mut self, ts: Option<f64>) {
         // Empty finished_tracks
         let mut finished_tracks = self.finished_tracks.lock().unwrap();
         finished_tracks.clear();
@@ -67,6 +64,7 @@ impl Player {
 
         let abort = self.stop.clone();
         let duration = self.duration.clone();
+        let prot = self.prot.clone();
 
         // ===== Start playback ===== //
         thread::spawn(move || {
@@ -79,7 +77,11 @@ impl Player {
             // ===================== //
             // Initialize engine & sink
             // ===================== //
-            let mut engine = PlayerEngine::new(&file_path, Some(abort.clone()));
+            let start_time = match ts {
+                Some(ts) => ts,
+                None => 0.0,
+            };
+            let mut engine = PlayerEngine::new(prot, Some(abort.clone()), start_time);
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
             let sink = Sink::try_new(&stream_handle).unwrap();
             sink.play();
@@ -96,7 +98,7 @@ impl Player {
             // ===================== //
             let chunk_lengths = Arc::new(Mutex::new(Vec::new()));
             let mut time_passed_unlocked = time_passed.lock().unwrap();
-            *time_passed_unlocked = 0.0;
+            *time_passed_unlocked = start_time;
             drop(time_passed_unlocked);
 
             // ===================== //
@@ -123,16 +125,17 @@ impl Player {
             // ===================== //
             let update_chunk_lengths = || {
                 let mut chunk_lengths = chunk_lengths.lock().unwrap();
-                let mut time_passed = time_passed.lock().unwrap();
+                let mut time_passed_unlocked = time_passed.lock().unwrap();
                 // Check how many chunks have been played (chunk_lengths.len() - sink.len())
                 // since the last time this function was called
                 // and add that to time_passed
                 let chunks_played = chunk_lengths.len() - sink.len();
                 for _ in 0..chunks_played {
-                    *time_passed += chunk_lengths.remove(0);
+                    *time_passed_unlocked += chunk_lengths.remove(0);
                 }
 
-                // println!("Time passed: {}", *time_passed);
+                drop(chunk_lengths);
+                drop(time_passed_unlocked);
             };
 
             // ===================== //
@@ -179,7 +182,12 @@ impl Player {
         let mut timestamp = self.ts.lock().unwrap();
         *timestamp = ts;
         drop(timestamp);
-        self.play();
+
+        self.kill_current();
+        self.stop.store(false, Ordering::SeqCst);
+        self.initialize_thread(Some(ts));
+
+        self.resume();
     }
 
     pub fn play(&mut self) {
@@ -188,7 +196,7 @@ impl Player {
 
         if !thread_exists {
             println!("Thread does not exist, initializing thread");
-            self.initialize_thread();
+            self.initialize_thread(None);
         }
 
         self.resume();
@@ -204,7 +212,7 @@ impl Player {
         self.paused.store(false, Ordering::SeqCst);
     }
 
-    pub fn stop(&self) {
+    pub fn kill_current(&self) {
         self.playing.store(false, Ordering::SeqCst);
         self.paused.store(false, Ordering::SeqCst);
 
@@ -213,6 +221,11 @@ impl Player {
         while !self.is_finished() {
             thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    pub fn stop(&self) {
+        self.kill_current();
+        self.ts.lock().unwrap().clone_from(&0.0);
     }
 
     pub fn is_playing(&self) -> bool {
@@ -245,5 +258,51 @@ impl Player {
     pub fn get_duration(&self) -> f64 {
         let duration = self.duration.lock().unwrap();
         *duration
+    }
+
+    pub fn seek(&mut self, ts: f64) {
+        println!("Seeking to {}", ts);
+        let mut timestamp = self.ts.lock().unwrap();
+        *timestamp = ts;
+        drop(timestamp);
+
+        let playing = self.is_playing();
+        let paused = self.is_paused();
+        let stopped = self.stop.load(Ordering::SeqCst);
+
+        self.kill_current();
+        self.initialize_thread(Some(ts));
+
+        self.stop.store(stopped, Ordering::SeqCst);
+        self.playing.store(playing, Ordering::SeqCst);
+        self.paused.store(paused, Ordering::SeqCst);
+
+        println!("Seeking to {}", ts);
+
+        if !paused {
+            println!("Resuming");
+            self.resume();
+        }
+    }
+
+    pub fn refresh_tracks(&mut self) {
+        let mut prot = self.prot.lock().unwrap();
+        prot.refresh_tracks();
+        drop(prot);
+
+        // If stopped, return
+        if self.is_finished() {
+            return;
+        }
+
+        // Kill current thread and start 
+        // new thread at the current timestamp
+        let ts = self.get_time();
+        self.seek(ts);
+        
+        // If previously playing, resume
+        if self.is_playing() {
+            self.resume();
+        }
     }
 }

@@ -186,7 +186,53 @@ impl Prot {
         first_audio_settings
     }
 
+    pub fn get_keys(&self) -> Vec<u32> {
+        // This should just be a range from 0 to the length of the track_paths or track_ids array
+        if let Some(track_paths) = &self.track_paths {
+            return (0..track_paths.len() as u32).collect();
+        }
+
+        if let Some(track_ids) = &self.track_ids {
+            return (0..track_ids.len() as u32).collect();
+        }
+
+        Vec::new()
+    }
+
+    pub fn enumerated_list(&self) -> Vec<(i32, String, Option<u32>)> {
+        let mut list: Vec<(i32, String, Option<u32>)> = Vec::new();
+        if let Some(track_paths) = &self.track_paths {
+            for (index, file_path) in track_paths.iter().enumerate() {
+                list.push((index as i32, String::from(file_path), None));
+            }
+
+            return list;
+        }
+
+        if let Some(track_ids) = &self.track_ids {
+            for (index, track_id) in track_ids.iter().enumerate() {
+                list.push((index as i32, String::from(self.file_path.as_ref().unwrap()), Some(*track_id)));
+            }
+
+            return list;
+        }
+
+        list
+    }
+
     pub fn get_duration(&self) -> &f64 {
         &self.duration
+    }
+
+    pub fn get_length(&self) -> usize {
+        if let Some(file_paths) = &self.file_paths {
+            return file_paths.len();
+        }
+
+        if let Some(track_ids) = &self.track_ids {
+            return track_ids.len();
+        }
+
+        0
     }
 }

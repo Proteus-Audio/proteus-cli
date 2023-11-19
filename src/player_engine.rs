@@ -1,5 +1,4 @@
 use dasp_ring_buffer::Bounded;
-use matroska::Audio;
 use rodio::{
     buffer::SamplesBuffer,
     dynamic_mixer::{self, DynamicMixer},
@@ -10,32 +9,22 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use std::{collections::HashMap, sync::mpsc::Receiver, thread};
 
-use crate::buffer::*;
+use crate::{buffer::*, prot::Prot};
 use crate::effects::*;
-use crate::info::Info;
-use crate::tools::*;
 use crate::track::*;
 
 #[derive(Debug, Clone)]
 pub struct PlayerEngine {
-    pub info: Info,
     pub finished_tracks: Arc<Mutex<Vec<i32>>>,
-    pub ts: Arc<Mutex<u32>>,
-    file_path: String,
+    start_time: f64,
     abort: Arc<AtomicBool>,
-    duration: f64,
-    track_index_array: Vec<u32>,
-    audio_settings: Audio,
     buffer_map: Arc<Mutex<HashMap<i32, Bounded<Vec<f32>>>>>,
     effects_buffer: Arc<Mutex<Bounded<Vec<f32>>>>,
+    prot: Arc<Mutex<Prot>>,
 }
 
 impl PlayerEngine {
-    pub fn new(file_path: &String, abort_option: Option<Arc<AtomicBool>>) -> Self {
-        let info = Info::new(file_path.clone());
-
-        let prot_info = parse_prot(&file_path, &info);
-
+    pub fn new(prot: Arc<Mutex<Prot>>, abort_option: Option<Arc<AtomicBool>>, start_time: f64) -> Self {
         let buffer_map = init_buffer_map();
         let finished_tracks: Arc<Mutex<Vec<i32>>> = Arc::new(Mutex::new(Vec::new()));
         let abort = if abort_option.is_some() {
@@ -44,20 +33,18 @@ impl PlayerEngine {
             Arc::new(AtomicBool::new(false))
         };
 
-        let buffer_size = prot_info.audio_settings.sample_rate as usize * 10; // Ten seconds of audio at the sample rate
+        let prot_unlocked = prot.lock().unwrap();
+        let buffer_size = prot_unlocked.audio_settings.sample_rate as usize * 10; // Ten seconds of audio at the sample rate
         let effects_buffer = Arc::new(Mutex::new(Bounded::from(vec![0.0; buffer_size])));
+        drop(prot_unlocked);
 
         let this = Self {
-            info,
             finished_tracks,
-            file_path: file_path.clone(),
-            ts: Arc::new(Mutex::new(0)),
-            duration: prot_info.duration,
-            track_index_array: prot_info.track_index_array,
-            audio_settings: prot_info.audio_settings,
+            start_time,
             buffer_map,
             effects_buffer,
             abort,
+            prot
         };
 
         this
@@ -75,12 +62,9 @@ impl PlayerEngine {
     }
 
     pub fn reception_loop(&mut self, f: &dyn Fn((SamplesBuffer<f32>, f64))) {
-        let keys = self
-            .track_index_array
-            .iter()
-            .enumerate()
-            .map(|(i, _v)| i as u32)
-            .collect::<Vec<u32>>();
+        let prot = self.prot.lock().unwrap();
+        let keys = prot.get_keys();
+        drop(prot);
         self.ready_buffer_map(&keys);
         let receiver = self.get_receiver();
 
@@ -93,22 +77,26 @@ impl PlayerEngine {
         // let (sender, receiver) = mpsc::sync_channel::<DynamicMixer<f32>>(1);
         let (sender, receiver) = mpsc::sync_channel::<(SamplesBuffer<f32>, f64)>(1);
 
-        let track_index_array = self.track_index_array.clone();
-        let audio_settings = self.audio_settings.clone();
+        let prot = self.prot.lock().unwrap();
+        let audio_settings = prot.audio_settings.clone();
+        drop(prot);
         let buffer_map = self.buffer_map.clone();
         let abort = self.abort.clone();
-
-        let enum_track_index_array = Self::make_enum_track_array(track_index_array);
 
         let playing_map: Arc<Mutex<std::collections::HashMap<i32, Arc<Mutex<bool>>>>> =
             Arc::new(Mutex::new(std::collections::HashMap::new()));
 
-        let file_path = String::from(self.file_path.clone());
         let finished_tracks = self.finished_tracks.clone();
         let effects_buffer = self.effects_buffer.clone();
+        let prot_locked = self.prot.clone();
+        let start_time = self.start_time;
 
         thread::spawn(move || {
-            for (key, track_id) in enum_track_index_array {
+            let prot = prot_locked.lock().unwrap();
+            let enumerated_list = prot.enumerated_list();
+            drop(prot);
+
+            for (key, file_path, track_id) in enumerated_list {
                 let playing = buffer_track(
                     TrackArgs {
                         file_path: file_path.clone(),
@@ -116,6 +104,7 @@ impl PlayerEngine {
                         track_key: key,
                         buffer_map: buffer_map.clone(),
                         finished_tracks: finished_tracks.clone(),
+                        start_time
                     },
                     abort.clone(),
                 );
@@ -280,13 +269,16 @@ impl PlayerEngine {
     }
 
     pub fn get_duration(&self) -> f64 {
-        self.duration
+        let prot = self.prot.lock().unwrap();
+        *prot.get_duration()
     }
 
     fn ready_buffer_map(&mut self, keys: &Vec<u32>) {
         self.buffer_map = init_buffer_map();
 
-        let sample_rate = self.audio_settings.sample_rate;
+        let prot = self.prot.lock().unwrap();
+        let sample_rate = prot.audio_settings.sample_rate;
+        drop(prot);
         let buffer_size = sample_rate as usize * 1; // Ten seconds of audio at the sample rate
 
         for key in keys {
@@ -304,12 +296,12 @@ impl PlayerEngine {
 
     pub fn finished_buffering(&self) -> bool {
         let finished_tracks = self.finished_tracks.lock().unwrap();
-        let track_index_array = self.track_index_array.clone();
+        let prot = self.prot.lock().unwrap();
+        let keys = prot.get_keys();
+        drop(prot);
 
-        let enum_index_array = Self::make_enum_track_array(track_index_array);
-
-        for (track_key, _id) in enum_index_array {
-            if !finished_tracks.contains(&(track_key as i32)) {
+        for key in keys {
+            if !finished_tracks.contains(&(key as i32)) {
                 return false;
             }
         }
@@ -318,6 +310,7 @@ impl PlayerEngine {
     }
 
     pub fn get_length(&self) -> usize {
-        self.track_index_array.len()
+        let prot = self.prot.lock().unwrap();
+        prot.get_length()
     }
 }
