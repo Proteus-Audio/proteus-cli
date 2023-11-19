@@ -106,6 +106,7 @@ fn run(args: &ArgMatches) -> Result<i32> {
     // let thread_start = std::time::Instant::now();
     // loop {
     //     if thread_start.elapsed().as_secs() >= 2 && player.is_playing() && thread_start.elapsed().as_secs() < 3 {
+    //         println!("Pausing");
     //         player.pause();
     //     }
 
@@ -115,11 +116,12 @@ fn run(args: &ArgMatches) -> Result<i32> {
     //     }
 
     //     if thread_start.elapsed().as_secs() >= 5 && player.is_playing() && thread_start.elapsed().as_secs() < 6 {
-    //         println!("Pausing");
+    //         println!("Stopping");
     //         player.stop();
     //     }
 
     //     if thread_start.elapsed().as_secs() >= 6 && !player.is_playing() && thread_start.elapsed().as_secs() < 7 {
+    //         println!("Playing");
     //         player.play();
     //     }
 
@@ -127,7 +129,7 @@ fn run(args: &ArgMatches) -> Result<i32> {
     //         break;
     //     }
 
-    //     println!("{} / {}", format_time(player.get_time() * 10), format_time((player.get_duration() * 1000) as u32));
+    //     println!("{} / {}", format_time(player.get_time() * 10), format_time((player.get_duration() * 1000.0) as u32));
 
     //     std::thread::sleep(std::time::Duration::from_millis(500));
     // }

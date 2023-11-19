@@ -4,3 +4,4 @@ mod tools;
 mod buffer;
 mod track;
 pub mod info;
+pub mod effects;
