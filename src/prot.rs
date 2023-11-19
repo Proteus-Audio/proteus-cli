@@ -17,7 +17,7 @@ use crate::tools::*;
 use crate::track::*;
 
 #[derive(Debug, Clone)]
-pub struct ProtInstance {
+pub struct PlayerEngine {
     pub info: Info,
     pub finished_tracks: Arc<Mutex<Vec<i32>>>,
     pub ts: Arc<Mutex<u32>>,
@@ -30,7 +30,7 @@ pub struct ProtInstance {
     effects_buffer: Arc<Mutex<Bounded<Vec<f32>>>>,
 }
 
-impl ProtInstance {
+impl PlayerEngine {
     pub fn new(file_path: &String, abort_option: Option<Arc<AtomicBool>>) -> Self {
         let info = Info::new(file_path.clone());
 
@@ -216,7 +216,7 @@ impl ProtInstance {
                     // let buffer = mixer.buffered().reverb(Duration::from_millis(100), 0.5).buffered();
 
                     let samples_buffer =
-                        ProtInstance::process_effects(mixer, effects_buffer.clone());
+                        PlayerEngine::process_effects(mixer, effects_buffer.clone());
 
                     // while let Some(sample) = mixer.next() {
                     //     // mixer.sample_rate();

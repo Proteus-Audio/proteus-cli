@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::{info::Info, prot::ProtInstance};
+use crate::tools::parse_prot;
+use crate::{info::Info, prot::PlayerEngine};
 
 #[derive(Debug, Clone)]
 pub struct Player {
@@ -67,7 +68,7 @@ impl Player {
         thread::spawn(move || {
             playback_thread_exists.store(true, Ordering::Relaxed);
 
-            let mut prot = ProtInstance::new(&file_path, Some(abort.clone()));
+            let mut prot = PlayerEngine::new(&file_path, Some(abort.clone()));
 
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
             let sink = Sink::try_new(&stream_handle).unwrap();
