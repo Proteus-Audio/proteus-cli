@@ -24,6 +24,7 @@ pub struct Player {
 impl Player {
     pub fn new(file_path: &String) -> Self {
         let info = Info::new(file_path.clone());
+        let prot_info = parse_prot(&file_path, &info);
 
         let mut this = Self {
             info,
@@ -66,25 +67,31 @@ impl Player {
 
         // ===== Start playback ===== //
         thread::spawn(move || {
+            // ===================== //
+            // Set playback_thread_exists to true
+            // ===================== //
             playback_thread_exists.store(true, Ordering::Relaxed);
 
-            let mut prot = PlayerEngine::new(&file_path, Some(abort.clone()));
 
+            // ===================== //
+            // Initialize engine & sink
+            // ===================== //
+            let mut engine = PlayerEngine::new(&file_path, Some(abort.clone()));
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
             let sink = Sink::try_new(&stream_handle).unwrap();
-
-            // let sink = sink_mutex.lock().unwrap();
             sink.play();
 
+            // ===================== //
+            // Set duration from engine
+            // ===================== //
             let mut duration = duration.lock().unwrap();
-            let prot_duration = prot.get_duration();
-            if prot_duration > *duration {
-                *duration = prot_duration;
-            }
+            *duration = engine.get_duration();
             drop(duration);
 
+            // ===================== //
+            // Initialize chunk_lengths & time_passed
+            // ===================== //
             let chunk_lengths = Arc::new(Mutex::new(Vec::new()));
-            // Set time_passed to 0
             let mut time_passed_unlocked = time_passed.lock().unwrap();
             *time_passed_unlocked = 0.0;
             drop(time_passed_unlocked);
@@ -126,7 +133,7 @@ impl Player {
             };
 
             // ===================== //
-            // Update sink
+            // Update sink for each chunk received from engine
             // ===================== //
             let update_sink = |(mixer, length_in_seconds): (SamplesBuffer<f32>, f64)| {
                 sink.append(mixer);
@@ -139,8 +146,11 @@ impl Player {
                 check_details();
             };
 
-            prot.reception_loop(&update_sink);
+            engine.reception_loop(&update_sink);
 
+            // ===================== //
+            // Wait until all tracks are finished playing in sink
+            // ===================== //
             loop {
                 update_chunk_lengths();
                 if !check_details() {
@@ -148,13 +158,16 @@ impl Player {
                 }
 
                 // If all tracks are finished buffering and sink is finished playing, exit the loop
-                if sink.empty() && prot.finished_buffering() {
+                if sink.empty() && engine.finished_buffering() {
                     break;
                 }
 
                 thread::sleep(Duration::from_millis(100));
             }
 
+            // ===================== //
+            // Set playback_thread_exists to false
+            // ===================== //
             playback_thread_exists.store(false, Ordering::Relaxed);
         });
     }
