@@ -74,7 +74,7 @@ impl ProtInstance {
         enum_track_index_array
     }
 
-    pub fn reception_loop(&mut self, f: &dyn Fn(SamplesBuffer<f32>)) {
+    pub fn reception_loop(&mut self, f: &dyn Fn((SamplesBuffer<f32>, f64))) {
         let keys = self
             .track_index_array
             .iter()
@@ -84,14 +84,14 @@ impl ProtInstance {
         self.ready_buffer_map(&keys);
         let receiver = self.get_receiver();
 
-        for mixer in receiver {
-            f(mixer);
+        for (mixer, length_in_seconds) in receiver {
+            f((mixer, length_in_seconds));
         }
     }
 
-    fn get_receiver(&self) -> Receiver<SamplesBuffer<f32>> {
+    fn get_receiver(&self) -> Receiver<(SamplesBuffer<f32>, f64)> {
         // let (sender, receiver) = mpsc::sync_channel::<DynamicMixer<f32>>(1);
-        let (sender, receiver) = mpsc::sync_channel::<SamplesBuffer<f32>>(1);
+        let (sender, receiver) = mpsc::sync_channel::<(SamplesBuffer<f32>, f64)>(1);
 
         let track_index_array = self.track_index_array.clone();
         let audio_settings = self.audio_settings.clone();
@@ -228,7 +228,9 @@ impl ProtInstance {
                     // println!("Mixer size: {:?}", mixer.total_duration());
                     // println!("Smallest buffer size: {:?}", length_of_smallest_buffer);
 
-                    sender.send(samples_buffer).unwrap();
+                    let length_in_seconds = length_of_smallest_buffer as f64 / audio_settings.sample_rate as f64 / audio_settings.channels as f64;
+
+                    sender.send((samples_buffer, length_in_seconds)).unwrap();
                 }
 
                 drop(hash_buffer);
