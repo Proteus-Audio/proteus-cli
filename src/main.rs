@@ -1,6 +1,6 @@
 use clap::{Arg, ArgMatches};
 use log::error;
-use proteus_audio::player;
+use proteus_audio::{info, player, prot};
 use symphonia::core::errors::Result;
 
 fn main() {
@@ -89,10 +89,55 @@ fn format_time(time: f64) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
+fn get_double_vec_of_file_paths() -> Vec<Vec<String>> {
+    vec![
+        vec![
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_bgclar1.mp3".to_string(),
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_bgclar2.mp3".to_string(),
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_bgclar3.mp3".to_string(),
+        ],
+        vec![
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_clar1.mp3".to_string(),
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_clar2.mp3".to_string(),
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_clar3.mp3".to_string(),
+        ],
+        vec![
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_piano1.mp3".to_string(),
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_piano2.mp3".to_string(),
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_piano3.mp3".to_string(),
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_piano4.mp3".to_string(),
+        ],
+        vec![
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_rythmn1.mp3".to_string(),
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_rythmn2.mp3".to_string(),
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_rythmn3.mp3".to_string(),
+            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_rythmn4.mp3".to_string(),
+        ],
+    ]
+}
+
 fn run(args: &ArgMatches) -> Result<i32> {
     let file_path = args.get_one::<String>("INPUT").unwrap();
 
     println!("file_path: {:?}", file_path);
+
+    // let mut prot = prot::Prot::new_from_file_paths(&get_double_vec_of_file_paths());
+
+    // // loop 10 times
+    // for _ in 0..10 {
+    //     println!("Duration: {}", prot.get_duration());
+    //     prot.refresh_tracks();
+    // }
+
+    // prot = prot::Prot::new(&"/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/export4.prot".to_string());
+
+    // // loop 10 times
+    // for _ in 0..10 {
+    //     println!("Duration: {}", prot.get_duration());
+    //     prot.refresh_tracks();
+    // }
+
+    // return Ok(0);
 
     // If file is not a .mka file, return an error
     if !(file_path.ends_with(".prot") || file_path.ends_with(".mka")) {
@@ -104,35 +149,73 @@ fn run(args: &ArgMatches) -> Result<i32> {
     player.play();
 
     let thread_start = std::time::Instant::now();
-    loop {
-        if thread_start.elapsed().as_secs() >= 2 && player.is_playing() && thread_start.elapsed().as_secs() < 3 {
-            println!("Pausing");
-            player.pause();
-        }
+    let mut skipped_once = false;
+    // loop {
+    //     if thread_start.elapsed().as_secs() >= 2
+    //         && player.is_playing()
+    //         && thread_start.elapsed().as_secs() < 3
+    //     {
+    //         println!("Pausing");
+    //         player.pause();
+    //     }
 
-        if thread_start.elapsed().as_secs() >= 3 && !player.is_playing() && thread_start.elapsed().as_secs() < 4 {
-            println!("Playing");
-            player.play();
-        }
+    //     if thread_start.elapsed().as_secs() >= 3
+    //         && !player.is_playing()
+    //         && thread_start.elapsed().as_secs() < 4
+    //     {
+    //         println!("Playing");
+    //         player.play();
+    //     }
 
-        if thread_start.elapsed().as_secs() >= 5 && player.is_playing() && thread_start.elapsed().as_secs() < 6 {
-            println!("Stopping");
-            player.stop();
-        }
+    //     if thread_start.elapsed().as_secs() >= 5
+    //         && player.is_playing()
+    //         && thread_start.elapsed().as_secs() < 6
+    //     {
+    //         println!("Stopping");
+    //         player.stop();
+    //         player.refresh_tracks();
+    //     }
 
-        if thread_start.elapsed().as_secs() >= 6 && !player.is_playing() && thread_start.elapsed().as_secs() < 7 {
-            println!("Playing");
-            player.play();
-        }
+    //     if thread_start.elapsed().as_secs() >= 6
+    //         && !player.is_playing()
+    //         && thread_start.elapsed().as_secs() < 7
+    //     {
+    //         println!("Playing");
+    //         player.play_at(0.0);
+    //     }
 
-        if thread_start.elapsed().as_secs() >= 8 && player.is_finished() {
-            break;
-        }
+    //     if thread_start.elapsed().as_secs() >= 8 && !skipped_once
+    //     {
+    //         println!("Playing");
+    //         player.play_at(10.0);
+    //         skipped_once = true;
+    //     }
 
-        println!("{} / {}", format_time(player.get_time() * 1000.0), format_time(player.get_duration() * 1000.0));
+    //     if thread_start.elapsed().as_secs() >= 8 && player.is_finished() {
+    //         break;
+    //     }
 
-        std::thread::sleep(std::time::Duration::from_millis(500));
-    }
+    //     println!(
+    //         "{} / {}",
+    //         format_time(player.get_time() * 1000.0),
+    //         format_time(player.get_duration() * 1000.0)
+    //     );
+
+    //     std::thread::sleep(std::time::Duration::from_millis(500));
+    // }
+
+    // let mut loop_iteration = 0;
+    // while !player.is_finished() {
+    //     if loop_iteration > 0 {
+    //         // println!("Get time: {}", player.get_time());
+    //         println!("Refreshing tracks at {}", format_time(player.get_time() * 1000.0));
+    //         println!("Duration: {}", format_time(player.get_duration() * 1000.0));
+    //         player.refresh_tracks();
+    //         // println!("Get time: {}", player.get_time());
+    //     }
+    //     loop_iteration += 1;
+    //     std::thread::sleep(std::time::Duration::from_secs(5));
+    // }
 
     while !player.is_finished() {
         println!(
