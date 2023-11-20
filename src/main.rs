@@ -2,6 +2,7 @@ use clap::{Arg, ArgMatches};
 use log::error;
 use proteus_audio::{info, player, prot};
 use symphonia::core::errors::Result;
+use rand::Rng;
 
 fn main() {
     let args = clap::Command::new("Prot Play")
@@ -148,74 +149,39 @@ fn run(args: &ArgMatches) -> Result<i32> {
 
     player.play();
 
-    let thread_start = std::time::Instant::now();
-    let mut skipped_once = false;
-    // loop {
-    //     if thread_start.elapsed().as_secs() >= 2
-    //         && player.is_playing()
-    //         && thread_start.elapsed().as_secs() < 3
-    //     {
-    //         println!("Pausing");
-    //         player.pause();
-    //     }
+    let mut loop_iteration = 0;
+    while !player.is_finished() {
+        // if loop_iteration > 0 {
+        //     // println!("Get time: {}", player.get_time());
+        //     println!("Refreshing tracks at {}", format_time(player.get_time() * 1000.0));
+        //     println!("Duration: {}", format_time(player.get_duration() * 1000.0));
+        //     // Measure the time it takes to refresh tracks
+        //     let start = std::time::Instant::now();
+        //     player.refresh_tracks();
+        //     let duration = start.elapsed();
+        //     println!("Refreshed tracks in {}ms", duration.as_millis());
+        //     // println!("Get time: {}", player.get_time());
+        // }
+        // loop_iteration += 1;
 
-    //     if thread_start.elapsed().as_secs() >= 3
-    //         && !player.is_playing()
-    //         && thread_start.elapsed().as_secs() < 4
-    //     {
-    //         println!("Playing");
-    //         player.play();
-    //     }
+        // if loop_iteration > 0 {
+        //     if !player.is_paused() {
+        //         player.pause();
+        //     } else {
+        //         // Set volume to random number between 0.0 and 1.0
+        //         let volume = rand::thread_rng().gen_range(0.3..1.0);
+        //         println!("Setting volume to {}", volume);
+        //         player.set_volume(volume);
+        //         println!("Get volume: {}", player.get_volume());
+        //         player.play();
+        //         println!("Starting playback at {}", format_time(player.get_time() * 1000.0));
+        //     }
+        // }
+        // loop_iteration += 1;
 
-    //     if thread_start.elapsed().as_secs() >= 5
-    //         && player.is_playing()
-    //         && thread_start.elapsed().as_secs() < 6
-    //     {
-    //         println!("Stopping");
-    //         player.stop();
-    //         player.refresh_tracks();
-    //     }
 
-    //     if thread_start.elapsed().as_secs() >= 6
-    //         && !player.is_playing()
-    //         && thread_start.elapsed().as_secs() < 7
-    //     {
-    //         println!("Playing");
-    //         player.play_at(0.0);
-    //     }
-
-    //     if thread_start.elapsed().as_secs() >= 8 && !skipped_once
-    //     {
-    //         println!("Playing");
-    //         player.play_at(10.0);
-    //         skipped_once = true;
-    //     }
-
-    //     if thread_start.elapsed().as_secs() >= 8 && player.is_finished() {
-    //         break;
-    //     }
-
-    //     println!(
-    //         "{} / {}",
-    //         format_time(player.get_time() * 1000.0),
-    //         format_time(player.get_duration() * 1000.0)
-    //     );
-
-    //     std::thread::sleep(std::time::Duration::from_millis(500));
-    // }
-
-    // let mut loop_iteration = 0;
-    // while !player.is_finished() {
-    //     if loop_iteration > 0 {
-    //         // println!("Get time: {}", player.get_time());
-    //         println!("Refreshing tracks at {}", format_time(player.get_time() * 1000.0));
-    //         println!("Duration: {}", format_time(player.get_duration() * 1000.0));
-    //         player.refresh_tracks();
-    //         // println!("Get time: {}", player.get_time());
-    //     }
-    //     loop_iteration += 1;
-    //     std::thread::sleep(std::time::Duration::from_secs(5));
-    // }
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
 
     while !player.is_finished() {
         println!(

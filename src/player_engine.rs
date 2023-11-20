@@ -8,9 +8,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use std::{collections::HashMap, sync::mpsc::Receiver, thread};
+use std::cmp::*;
 
 use crate::{buffer::*, prot::Prot};
-use crate::effects::*;
+// use crate::effects::*;
 use crate::track::*;
 
 #[derive(Debug, Clone)]
@@ -50,17 +51,6 @@ impl PlayerEngine {
         this
     }
 
-    fn make_enum_track_array(track_index_array: Vec<u32>) -> Vec<(i32, u32)> {
-        let enum_track_index_array: Vec<(i32, u32)> = track_index_array
-            .iter()
-            .enumerate()
-            // When trying to directly enumerate the track_index_array, the reference dies too early.
-            .map(|(i, v)| (i32::from(i as i32), u32::from(*v)))
-            .collect();
-
-        enum_track_index_array
-    }
-
     pub fn reception_loop(&mut self, f: &dyn Fn((SamplesBuffer<f32>, f64))) {
         let prot = self.prot.lock().unwrap();
         let keys = prot.get_keys();
@@ -74,7 +64,7 @@ impl PlayerEngine {
     }
 
     fn get_receiver(&self) -> Receiver<(SamplesBuffer<f32>, f64)> {
-        // let (sender, receiver) = mpsc::sync_channel::<DynamicMixer<f32>>(1);
+        // let (sender, receiver) = mpsc::sync_channel::<(DynamicMixer<f32>, f64)>(1);
         let (sender, receiver) = mpsc::sync_channel::<(SamplesBuffer<f32>, f64)>(1);
 
         let prot = self.prot.lock().unwrap();
@@ -234,38 +224,42 @@ impl PlayerEngine {
 
     pub fn process_effects(
         mixer: DynamicMixer<f32>,
-        effects_buffer: Arc<Mutex<Bounded<Vec<f32>>>>,
+        _effects_buffer: Arc<Mutex<Bounded<Vec<f32>>>>,
     ) -> SamplesBuffer<f32> {
+        // TODO: Implement effects
         let sample_rate = mixer.sample_rate();
         let mixer_buffered = mixer.buffered();
-        let starting_length = mixer_buffered.clone().into_iter().count();
-        // let samples: Vec<f32> = mixer.buffered().take(length_of_smallest_buffer).collect();
-        let mut samples: Vec<f32> = Vec::new();
-        let mut left_over_samples: Vec<f32> = Vec::new();
+        // let starting_length = mixer_buffered.clone().into_iter().count();
+        // // let samples: Vec<f32> = mixer.buffered().take(length_of_smallest_buffer).collect();
+        // let mut samples: Vec<f32> = Vec::new();
+        // let mut left_over_samples: Vec<f32> = Vec::new();
 
         let vector_samples = mixer_buffered.clone().into_iter().collect::<Vec<f32>>();
 
+        // let max = mixer_buffered.clone().max_by(|x, y| x.abs().total_cmp(&y.abs()));
+        // println!("Max peak: {:?}", max);
+        
         // let samples_with_reverb = apply_convolution_reverb(vector_samples);
         // let samples_with_reverb = simple_reverb(vector_samples, 22050, 0.5);
 
-        let mut index = 0;
-        for sample in vector_samples {
-            index += 1;
+        // let mut index = 0;
+        // for sample in vector_samples {
+        //     index += 1;
 
-            if index <= starting_length {
-                samples.push(sample);
-            } else {
-                left_over_samples.push(sample);
-            }
-        }
+        //     if index <= starting_length {
+        //         samples.push(sample);
+        //     } else {
+        //         left_over_samples.push(sample);
+        //     }
+        // }
 
-        let mut effects_buffer_unlocked = effects_buffer.lock().unwrap();
-        for sample in left_over_samples {
-            effects_buffer_unlocked.push(sample);
-        }
-        drop(effects_buffer_unlocked);
+        // let mut effects_buffer_unlocked = effects_buffer.lock().unwrap();
+        // for sample in left_over_samples {
+        //     effects_buffer_unlocked.push(sample);
+        // }
+        // drop(effects_buffer_unlocked);
 
-        SamplesBuffer::new(2, sample_rate, samples)
+        SamplesBuffer::new(mixer_buffered.channels(), sample_rate, vector_samples)
     }
 
     pub fn get_duration(&self) -> f64 {
@@ -290,9 +284,9 @@ impl PlayerEngine {
         }
     }
 
-    pub fn abort(&self) {
-        self.abort.store(true, Ordering::SeqCst);
-    }
+    // pub fn abort(&self) {
+    //     self.abort.store(true, Ordering::SeqCst);
+    // }
 
     pub fn finished_buffering(&self) -> bool {
         let finished_tracks = self.finished_tracks.lock().unwrap();
@@ -309,8 +303,8 @@ impl PlayerEngine {
         true
     }
 
-    pub fn get_length(&self) -> usize {
-        let prot = self.prot.lock().unwrap();
-        prot.get_length()
-    }
+    // pub fn get_length(&self) -> usize {
+    //     let prot = self.prot.lock().unwrap();
+    //     prot.get_length()
+    // }
 }

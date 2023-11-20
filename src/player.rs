@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::prot::Prot;
 use crate::{info::Info, player_engine::PlayerEngine};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Player {
     pub info: Info,
     pub finished_tracks: Arc<Mutex<Vec<i32>>>,
@@ -20,12 +20,18 @@ pub struct Player {
     playback_thread_exists: Arc<AtomicBool>,
     duration: Arc<Mutex<f64>>,
     prot: Arc<Mutex<Prot>>,
+    audio_heard: Arc<AtomicBool>,
+    volume: Arc<Mutex<f32>>,
+    sink: Arc<Mutex<Sink>>,
 }
 
 impl Player {
     pub fn new(file_path: &String) -> Self {
         let info = Info::new(file_path.clone());
         let prot = Arc::new(Mutex::new(Prot::new(file_path)));
+
+        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        let sink: Arc<Mutex<Sink>> = Arc::new(Mutex::new(Sink::try_new(&stream_handle).unwrap()));
 
         let mut this = Self {
             info,
@@ -37,7 +43,10 @@ impl Player {
             playback_thread_exists: Arc::new(AtomicBool::new(true)),
             duration: Arc::new(Mutex::new(0.0)),
             stop: Arc::new(AtomicBool::new(false)),
-            prot
+            audio_heard: Arc::new(AtomicBool::new(false)),
+            volume: Arc::new(Mutex::new(0.8)),
+            sink,
+            prot,
         };
 
         this.initialize_thread(None);
@@ -65,6 +74,12 @@ impl Player {
         let duration = self.duration.clone();
         let prot = self.prot.clone();
 
+        let audio_heard = self.audio_heard.clone();
+        let volume = self.volume.clone();
+        let sink_mutex = self.sink.clone();
+
+        audio_heard.store(false, Ordering::Relaxed);
+
         // ===== Start playback ===== //
         thread::spawn(move || {
             // ===================== //
@@ -82,8 +97,13 @@ impl Player {
             };
             let mut engine = PlayerEngine::new(prot, Some(abort.clone()), start_time);
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-            let sink = Sink::try_new(&stream_handle).unwrap();
+            // let sink_mutex = Arc::new(Mutex::new(Sink::try_new(&stream_handle).unwrap()));
+
+            let mut sink = sink_mutex.lock().unwrap();
+            *sink = Sink::try_new(&stream_handle).unwrap();
+            sink.set_volume(*volume.lock().unwrap());
             sink.play();
+            drop(sink);
 
             // ===================== //
             // Set duration from engine
@@ -100,22 +120,49 @@ impl Player {
             *time_passed_unlocked = start_time;
             drop(time_passed_unlocked);
 
+            let pause_sink = |sink: &Sink, fade_length_in_seconds: f32| {
+                let fade_increments = sink.volume() / (fade_length_in_seconds * 100.0);
+                // Fade out and pause sink
+                while sink.volume() > 0.0 {
+                    sink.set_volume(sink.volume() - fade_increments);
+                    thread::sleep(Duration::from_millis(10));
+                }
+                sink.pause();
+            };
+
+            let resume_sink = |sink: &Sink, fade_length_in_seconds: f32| {
+                let volume = *volume.lock().unwrap();
+                let fade_increments = (volume - sink.volume()) / (fade_length_in_seconds * 100.0);
+                // Fade in and play sink
+                sink.play();
+                while sink.volume() < volume {
+                    sink.set_volume(sink.volume() + fade_increments);
+                    thread::sleep(Duration::from_millis(10));
+                }
+            };
+
             // ===================== //
             // Check if the player should be paused or not
             // ===================== //
             let check_details = || {
                 if abort.load(Ordering::SeqCst) {
+                    let sink = sink_mutex.lock().unwrap();
+                    pause_sink(&sink, 0.15);
                     sink.clear();
+                    drop(sink);
+                    
                     return false;
                 }
-
+                
+                let sink = sink_mutex.lock().unwrap();
                 if paused.load(Ordering::SeqCst) && !sink.is_paused() {
-                    sink.pause();
+                    pause_sink(&sink, 0.15);
                 }
                 if !paused.load(Ordering::SeqCst) && sink.is_paused() {
-                    sink.play();
+                    resume_sink(&sink, 0.15);
                 }
-
+                drop(sink);
+                
                 return true;
             };
 
@@ -126,13 +173,16 @@ impl Player {
                 if abort.load(Ordering::SeqCst) {
                     return;
                 }
-
+                
                 let mut chunk_lengths = chunk_lengths.lock().unwrap();
                 let mut time_passed_unlocked = time_passed.lock().unwrap();
                 // Check how many chunks have been played (chunk_lengths.len() - sink.len())
                 // since the last time this function was called
                 // and add that to time_passed
+                let sink = sink_mutex.lock().unwrap();
                 let chunks_played = chunk_lengths.len() - sink.len();
+                drop(sink);
+                
                 for _ in 0..chunks_played {
                     *time_passed_unlocked += chunk_lengths.remove(0);
                 }
@@ -145,7 +195,11 @@ impl Player {
             // Update sink for each chunk received from engine
             // ===================== //
             let update_sink = |(mixer, length_in_seconds): (SamplesBuffer<f32>, f64)| {
+                audio_heard.store(true, Ordering::Relaxed);
+
+                let sink = sink_mutex.lock().unwrap();
                 sink.append(mixer);
+                drop(sink);
 
                 let mut chunk_lengths = chunk_lengths.lock().unwrap();
                 chunk_lengths.push(length_in_seconds);
@@ -165,12 +219,15 @@ impl Player {
                 if !check_details() {
                     break;
                 }
-
+                
+                let sink = sink_mutex.lock().unwrap();
+                let sink_empty = sink.empty();
+                drop(sink);
                 // If all tracks are finished buffering and sink is finished playing, exit the loop
-                if sink.empty() && engine.finished_buffering() {
+                if sink_empty && engine.finished_buffering() {
                     break;
                 }
-
+                
                 thread::sleep(Duration::from_millis(100));
             }
 
@@ -191,6 +248,11 @@ impl Player {
         self.initialize_thread(Some(ts));
 
         self.resume();
+
+        // Wait until audio is heard
+        while !self.audio_heard.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     pub fn play(&mut self) {
@@ -202,6 +264,11 @@ impl Player {
         }
 
         self.resume();
+
+        // Wait until audio is heard
+        while !self.audio_heard.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     pub fn pause(&self) {
@@ -302,5 +369,32 @@ impl Player {
         if self.is_playing() {
             self.resume();
         }
+
+        // Wait until audio is heard
+        while !self.audio_heard.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    pub fn shuffle(&mut self) {
+        self.refresh_tracks();
+    }
+
+    pub fn set_volume(&mut self, new_volume: f32) {
+        println!("Setting volume to {}", new_volume);
+        let sink = self.sink.lock().unwrap();
+        println!("Unlocked sink");
+        sink.set_volume(new_volume);
+        println!("Volume set, dropping sink");
+        drop(sink);
+        println!("Set volume to {}", new_volume);
+
+        let mut volume = self.volume.lock().unwrap();
+        *volume = new_volume;
+        drop(volume);
+    }
+
+    pub fn get_volume(&self) -> f32 {
+        *self.volume.lock().unwrap()
     }
 }
