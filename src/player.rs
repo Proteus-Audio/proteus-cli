@@ -52,7 +52,6 @@ impl Player {
         drop(finished_tracks);
 
         // ===== Set play options ===== //
-        println!("Initializing thread");
         self.playing.store(false, Ordering::SeqCst);
         self.paused.store(true, Ordering::SeqCst);
         self.playback_thread_exists.store(true, Ordering::SeqCst);
@@ -127,7 +126,7 @@ impl Player {
                 if abort.load(Ordering::SeqCst) {
                     return;
                 }
-                
+
                 let mut chunk_lengths = chunk_lengths.lock().unwrap();
                 let mut time_passed_unlocked = time_passed.lock().unwrap();
                 // Check how many chunks have been played (chunk_lengths.len() - sink.len())
@@ -199,7 +198,6 @@ impl Player {
         self.stop.store(false, Ordering::SeqCst);
 
         if !thread_exists {
-            println!("Thread does not exist, initializing thread");
             self.initialize_thread(None);
         }
 
@@ -265,7 +263,6 @@ impl Player {
     }
 
     pub fn seek(&mut self, ts: f64) {
-        println!("Seeking to {}", ts);
         let mut timestamp = self.ts.lock().unwrap();
         *timestamp = ts;
         drop(timestamp);
@@ -281,10 +278,7 @@ impl Player {
         self.playing.store(playing, Ordering::SeqCst);
         self.paused.store(paused, Ordering::SeqCst);
 
-        println!("Seeking to {}", ts);
-
         if !paused {
-            println!("Resuming");
             self.resume();
         }
     }

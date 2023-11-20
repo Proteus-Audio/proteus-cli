@@ -137,7 +137,6 @@ fn add_samples_to_buffer_map(buffer_map: &mut Arc<Mutex<HashMap<i32, Bounded<Vec
 }
 
 fn mark_track_as_finished(finished_tracks: &mut Arc<Mutex<Vec<i32>>>, track_key: i32) {
-    println!("Track {} finished", track_key);
     let mut finished_tracks_copy = finished_tracks.lock().unwrap();
     finished_tracks_copy.push(track_key);
     drop(finished_tracks_copy);
