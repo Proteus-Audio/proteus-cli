@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use dasp_ring_buffer::Bounded;
+use symphonia::core::formats::{SeekMode, SeekTo};
+use symphonia::core::units::Time;
 use std::sync::{Mutex, Arc};
 use std::thread;
 use symphonia::core::errors::Error;
@@ -9,23 +11,31 @@ use symphonia::core::audio::{AudioBufferRef, Signal};
 use log::warn;
 
 use crate::buffer::buffer_remaining_space;
-use crate::prot::open_file;
+use crate::tools::open_file;
 
 pub struct TrackArgs {
     pub file_path: String,
-    pub track_id: u32,
+    pub track_id: Option<u32>,
     pub track_key: i32,
     pub buffer_map: Arc<Mutex<HashMap<i32, Bounded<Vec<f32>>>>>,
     pub finished_tracks: Arc<Mutex<Vec<i32>>>,
+    pub start_time: f64,
 }
 
 pub fn buffer_track(args: TrackArgs, abort: Arc<AtomicBool>) -> Arc<Mutex<bool>> {
-    let TrackArgs { file_path, track_id, track_key, buffer_map, finished_tracks } = args;
+    let TrackArgs { file_path, track_id, track_key, buffer_map, finished_tracks, start_time } = args;
     // Create a channel for sending audio chunks from the decoder to the playback system.
     let (mut decoder, mut format) = open_file(&file_path);
     let playing: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
 
     thread::spawn(move || {
+        // If not explicitly specified, use the first audio track.
+        let track_id = track_id.unwrap_or(0);
+        // let track_id = track_id.unwrap_or_else(|| {
+        //     format.tracks().iter().find(|track| track.codec_params. == symphonia::core::media::Type::Audio)
+        //         .expect("no audio track found").id
+        // });
+
         // Get the selected track using the track ID.
         let track = format.tracks().iter().find(|track| track.id == track_id).expect("no track found");
 
@@ -33,6 +43,20 @@ pub fn buffer_track(args: TrackArgs, abort: Arc<AtomicBool>) -> Arc<Mutex<bool>>
         // let tb = track.codec_params.time_base;
         let dur = track.codec_params.n_frames.map(|frames| track.codec_params.start_ts + frames);
 
+        // Start time at given time
+        let seconds = start_time.floor() as u64;
+        let frac_of_second = start_time.fract();
+        let time = Time::new(seconds, frac_of_second);
+
+        let seek_success = format.seek(SeekMode::Coarse, SeekTo::Time { time, track_id: Some(track_id) });
+
+        if seek_success.is_err() {
+            mark_track_as_finished(&mut finished_tracks.clone(), track_key);
+            return;
+        }
+
+        // TODO: Use actual time?
+        // let actual_time = track.codec_params.time_base.unwrap().calc_time(seek_success.unwrap().actual_ts);
 
         let _result: Result<bool, Error> = loop {
             if abort.load(std::sync::atomic::Ordering::Relaxed) {
@@ -51,7 +75,6 @@ pub fn buffer_track(args: TrackArgs, abort: Arc<AtomicBool>) -> Arc<Mutex<bool>>
 
             // If playback is finished, break out of the loop.
             if packet.ts() >= dur.unwrap_or(0) {
-                // mark_track_as_finished(&mut finished_tracks.clone(), track_key);
                 break Ok(true);
             }
 
@@ -114,7 +137,6 @@ fn add_samples_to_buffer_map(buffer_map: &mut Arc<Mutex<HashMap<i32, Bounded<Vec
 }
 
 fn mark_track_as_finished(finished_tracks: &mut Arc<Mutex<Vec<i32>>>, track_key: i32) {
-    println!("Track {} finished", track_key);
     let mut finished_tracks_copy = finished_tracks.lock().unwrap();
     finished_tracks_copy.push(track_key);
     drop(finished_tracks_copy);

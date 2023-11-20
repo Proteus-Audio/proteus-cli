@@ -83,8 +83,6 @@ fn get_durations(file_path: &String) -> HashMap<u32, f64> {
                 // let milliseconds = duration_parts[3].parse::<f64>().unwrap();
                 let duration_in_seconds = (hours * 3600.0) + (minutes * 60.0) + seconds;
 
-                println!("Duration: {}", duration_in_seconds);
-
                 durations.push(duration_in_seconds);
             }
         });
@@ -94,7 +92,6 @@ fn get_durations(file_path: &String) -> HashMap<u32, f64> {
     let mut duration_map: HashMap<u32, f64> = HashMap::new();
 
     for (index, track) in probed.format.tracks().iter().enumerate() {
-        println!("Track: {:?}", track.id);
         if let Some(real_duration) = durations.get(index) {
             duration_map.insert(track.id, *real_duration);
             continue;
@@ -110,15 +107,30 @@ fn get_durations(file_path: &String) -> HashMap<u32, f64> {
 
 #[derive(Debug, Clone)]
 pub struct Info {
-    pub file_path: String,
-    duration_map: HashMap<u32, f64>,
+    pub file_paths: Vec<String>,
+    pub duration_map: HashMap<u32, f64>,
 }
 
 impl Info {
     pub fn new(file_path: String) -> Self {
         Self {
             duration_map: get_durations(&file_path),
-            file_path,
+            file_paths: vec![file_path],
+        }
+    }
+
+    pub fn new_from_file_paths(file_paths: Vec<String>) -> Self {
+        let mut duration_map: HashMap<u32, f64> = HashMap::new();
+
+        for (index, file_path) in file_paths.iter().enumerate() {
+            let durations = get_durations(file_path);
+            let longest = durations.iter().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap();
+            duration_map.insert(index as u32, *longest.1);
+        }
+
+        Self {
+            duration_map,
+            file_paths,
         }
     }
     

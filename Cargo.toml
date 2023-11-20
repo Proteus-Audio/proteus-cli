@@ -1,6 +1,6 @@
 [package]
 name = "proteus_audio"
-version = "0.1.8"
+version = "0.2.1"
 edition = "2021"
 authors = ["Adam Thomas Howard <adamthomashoward@gmail.com>"]
 license = "Apache-2.0"
@@ -20,5 +20,6 @@ log = "0.4.20"
 matroska = "0.26.0"
 rand = "0.8.5"
 rodio = "0.17.3"
+rustfft = "6.1.0"
 serde_json = "1.0.108"
 symphonia = "0.5.3"

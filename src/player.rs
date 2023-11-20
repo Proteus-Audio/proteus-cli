@@ -1,42 +1,31 @@
-use dasp_ring_buffer::Bounded;
-use matroska::Audio;
-use rodio::{buffer::SamplesBuffer, OutputStream, Sink, Source, dynamic_mixer::{self, DynamicMixer}};
-use std::{thread, collections::HashMap};
-use std::time::Duration;
-use std::sync::{mpsc, Arc, Mutex};
+use rodio::buffer::SamplesBuffer;
+use rodio::{OutputStream, Sink};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
-
-use crate::{prot::*, info::Info};
-use crate::track::*;
-use crate::buffer::*;
+use crate::prot::Prot;
+use crate::{info::Info, player_engine::PlayerEngine};
 
 #[derive(Debug, Clone)]
 pub struct Player {
     pub info: Info,
     pub finished_tracks: Arc<Mutex<Vec<i32>>>,
     pub file_path: String,
-    pub ts: Arc<Mutex<u32>>,
+    pub ts: Arc<Mutex<f64>>,
     playing: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
+    stop: Arc<AtomicBool>,
     playback_thread_exists: Arc<AtomicBool>,
     duration: Arc<Mutex<f64>>,
-    track_index_array: Arc<Mutex<Vec<u32>>>,
-    audio_settings: Audio,
-    buffer_map: Arc<Mutex<HashMap<i32, Bounded<Vec<f32>>>>>,
+    prot: Arc<Mutex<Prot>>,
 }
 
 impl Player {
     pub fn new(file_path: &String) -> Self {
         let info = Info::new(file_path.clone());
-
-        let ProtInfo { 
-            track_index_array,
-            audio_settings ,
-            duration
-        } = parse_prot(&file_path, &info);
-
-        let buffer_map = init_buffer_map();
+        let prot = Arc::new(Mutex::new(Prot::new(file_path)));
 
         let mut this = Self {
             info,
@@ -44,247 +33,172 @@ impl Player {
             file_path: file_path.clone(),
             playing: Arc::new(AtomicBool::new(false)),
             paused: Arc::new(AtomicBool::new(false)),
-            ts: Arc::new(Mutex::new(0)),
+            ts: Arc::new(Mutex::new(0.0)),
             playback_thread_exists: Arc::new(AtomicBool::new(true)),
-            duration: Arc::new(Mutex::new(duration)),
-            track_index_array: Arc::new(Mutex::new(track_index_array)),
-            audio_settings,
-            buffer_map
+            duration: Arc::new(Mutex::new(0.0)),
+            stop: Arc::new(AtomicBool::new(false)),
+            prot
         };
 
-        this.initialize_thread();
+        this.initialize_thread(None);
 
         this
     }
 
-    fn timestamp_thread(&self) {
-        // TODO: find a more accurate way to count time. This method is not guaranteed to be accurate.
-        let mut ts = self.ts.lock().unwrap();
-        *ts = 0;
-        drop(ts);
-        let ts = self.ts.clone();
-        let playing = self.playing.clone();
-        let paused = self.paused.clone();
-        let playback_thread_exists = self.playback_thread_exists.clone();
-        
-        println!("timestamp_thread: {}, {}, {}", playing.load(Ordering::SeqCst), paused.load(Ordering::SeqCst), playback_thread_exists.load(Ordering::SeqCst));
-        thread::spawn(move || {
-            loop {
-                // let mut playing = playing.lock().unwrap();
-                // let paused = paused.lock().unwrap();
-                let mut ts = ts.lock().unwrap();
-                let play_value = playing.load(Ordering::SeqCst);
-                let pause_value = paused.load(Ordering::SeqCst);
-
-                if !play_value && !pause_value {
-                    *ts = 0;
-                    break;
-                }
-
-                if play_value && !pause_value {
-                    *ts += 1;
-                }
-
-                let thread_exists = playback_thread_exists.load(Ordering::SeqCst);
-                if !thread_exists {
-                    *ts = 0;
-                    playing.store(false, Ordering::SeqCst);
-                    break;
-                }
-
-                drop(ts);
-
-                thread::sleep(Duration::from_millis(10));
-            }
-        });
-    }
-
-    fn initialize_thread(&mut self) {
-        self.shuffle();
-        // ===== Setup ===== //
-        let sample_rate = self.audio_settings.sample_rate;
-
-        let file_path = String::from(self.file_path.clone());
+    fn initialize_thread(&mut self, ts: Option<f64>) {
         // Empty finished_tracks
         let mut finished_tracks = self.finished_tracks.lock().unwrap();
         finished_tracks.clear();
         drop(finished_tracks);
-        
+
         // ===== Set play options ===== //
         self.playing.store(false, Ordering::SeqCst);
         self.paused.store(true, Ordering::SeqCst);
         self.playback_thread_exists.store(true, Ordering::SeqCst);
-        
+
         // ===== Clone variables ===== //
-        let finished_tracks = self.finished_tracks.clone();
-        let playing = self.playing.clone();
         let paused = self.paused.clone();
-
         let playback_thread_exists = self.playback_thread_exists.clone();
+        let time_passed = self.ts.clone();
 
-        self.timestamp_thread();
-    
-        let index_array = self.track_index_array.lock().unwrap();
-        let length = index_array.len();
-        let keys: Vec<i32> = index_array.iter().enumerate().map(|(i, _v)| i as i32).collect();
-        let enum_track_index_array: Vec<(i32, u32)> = index_array
-            .iter()
-            .enumerate()
-            // When trying to directly enumerate the track_index_array, the reference dies too early.
-            .map(|(i, v)| (i32::from(i as i32), u32::from(*v))).collect();
-        drop(index_array);
-
-        self.ready_buffer_map(&keys);
-        let buffer_map = self.buffer_map.clone();
-
-        let abort = Arc::new(AtomicBool::new(false));
+        let abort = self.stop.clone();
+        let duration = self.duration.clone();
+        let prot = self.prot.clone();
 
         // ===== Start playback ===== //
         thread::spawn(move || {
+            // ===================== //
+            // Set playback_thread_exists to true
+            // ===================== //
             playback_thread_exists.store(true, Ordering::Relaxed);
 
+
+            // ===================== //
+            // Initialize engine & sink
+            // ===================== //
+            let start_time = match ts {
+                Some(ts) => ts,
+                None => 0.0,
+            };
+            let mut engine = PlayerEngine::new(prot, Some(abort.clone()), start_time);
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-            let sink = Sink::try_new(&stream_handle).expect("failed to create sink");
-    
-            let (sender, receiver) = mpsc::sync_channel::<DynamicMixer<f32>>(1);
-    
-            let playing_map: Arc<Mutex<std::collections::HashMap<i32, Arc<Mutex<bool>>>>> = Arc::new(Mutex::new(std::collections::HashMap::new()));
-    
-            let file_path_clone = String::from(file_path.clone());
-            for (key, track_id) in enum_track_index_array {
-                let playing = buffer_track(TrackArgs{
-                    file_path: file_path_clone.clone(),
-                    track_id,
-                    track_key: key,
-                    buffer_map: buffer_map.clone(),
-                    finished_tracks: finished_tracks.clone(),
-                }, abort.clone());
-    
-                let mut playing_map = playing_map.lock().unwrap();
-                playing_map.insert(key, playing);
-                drop(playing_map);
-            }
-    
-            // let sink_mutex_copy = sink_mutex.clone();
-            let finished_tracks_copy = finished_tracks.clone();
-    
-            thread::spawn(move || {
-                let hash_buffer_copy = buffer_map.clone();
-    
-                loop {
-                    let mut hash_buffer = hash_buffer_copy.lock().unwrap();
-    
-                    let mut removable_tracks: Vec<i32> = Vec::new();
-                    
-                    // if all buffers are not empty, add samples from each buffer to the mixer
-                    // until at least one buffer is empty
-                    let mut all_buffers_full = true;
-                    for (track_key, buffer) in hash_buffer.iter() {
-                        if buffer.len() == 0 {
-                            let finished = finished_tracks_copy.lock().unwrap();
-                            if finished.contains(&track_key) {
-                                removable_tracks.push(*track_key);
-                                continue;
-                            }
-                            all_buffers_full = false;
-                        }
-                    }
-    
-                    for track_id in removable_tracks {
-                        hash_buffer.remove(&track_id);
-                    }
-    
-                    // If hash_buffer contains no tracks, exit the loop
-                    if hash_buffer.len() == 0 {
-                        break;
-                    }
-    
-                    
-                    if all_buffers_full {
-                        let (controller, mixer) = dynamic_mixer::mixer::<f32>(2, 44_100);
-                        let length_of_smallest_buffer = hash_buffer.iter().map(|(_, buffer)| buffer.len()).min().unwrap();
-                        for (_, buffer) in hash_buffer.iter_mut() {
-                            let mut samples: Vec<f32> = Vec::new();
-                            for _ in 0..length_of_smallest_buffer {
-                                samples.push(buffer.pop().unwrap());
-                            }
-    
-                            
-                            let source = SamplesBuffer::new(2, sample_rate as u32, samples);
-                            controller.add(source.convert_samples().amplify(0.2));
-                        }
-                        
-                        sender.send(mixer).unwrap();
-                    }
-                    
-                    drop(hash_buffer);
-    
-                    thread::sleep(Duration::from_millis(100));
-                }
-            });
-    
-            // let sink = sink_mutex.lock().unwrap();
+            let sink = Sink::try_new(&stream_handle).unwrap();
             sink.play();
 
-            // TODO: refactor this and the loop that follows it into a single loop
-            for received in receiver {
-                sink.append(received);
+            // ===================== //
+            // Set duration from engine
+            // ===================== //
+            let mut duration = duration.lock().unwrap();
+            *duration = engine.get_duration();
+            drop(duration);
 
-                if !playing.load(Ordering::SeqCst) && !paused.load(Ordering::SeqCst) {
-                    abort.store(true, Ordering::Relaxed);
+            // ===================== //
+            // Initialize chunk_lengths & time_passed
+            // ===================== //
+            let chunk_lengths = Arc::new(Mutex::new(Vec::new()));
+            let mut time_passed_unlocked = time_passed.lock().unwrap();
+            *time_passed_unlocked = start_time;
+            drop(time_passed_unlocked);
+
+            // ===================== //
+            // Check if the player should be paused or not
+            // ===================== //
+            let check_details = || {
+                if abort.load(Ordering::SeqCst) {
                     sink.clear();
-                    break;
+                    return false;
                 }
-                
+
                 if paused.load(Ordering::SeqCst) && !sink.is_paused() {
                     sink.pause();
-                } 
+                }
                 if !paused.load(Ordering::SeqCst) && sink.is_paused() {
                     sink.play();
                 }
-            }
-            
+
+                return true;
+            };
+
+            // ===================== //
+            // Update chunk_lengths / time_passed
+            // ===================== //
+            let update_chunk_lengths = || {
+                if abort.load(Ordering::SeqCst) {
+                    return;
+                }
+
+                let mut chunk_lengths = chunk_lengths.lock().unwrap();
+                let mut time_passed_unlocked = time_passed.lock().unwrap();
+                // Check how many chunks have been played (chunk_lengths.len() - sink.len())
+                // since the last time this function was called
+                // and add that to time_passed
+                let chunks_played = chunk_lengths.len() - sink.len();
+                for _ in 0..chunks_played {
+                    *time_passed_unlocked += chunk_lengths.remove(0);
+                }
+
+                drop(chunk_lengths);
+                drop(time_passed_unlocked);
+            };
+
+            // ===================== //
+            // Update sink for each chunk received from engine
+            // ===================== //
+            let update_sink = |(mixer, length_in_seconds): (SamplesBuffer<f32>, f64)| {
+                sink.append(mixer);
+
+                let mut chunk_lengths = chunk_lengths.lock().unwrap();
+                chunk_lengths.push(length_in_seconds);
+                drop(chunk_lengths);
+
+                update_chunk_lengths();
+                check_details();
+            };
+
+            engine.reception_loop(&update_sink);
+
+            // ===================== //
+            // Wait until all tracks are finished playing in sink
+            // ===================== //
             loop {
-                if !playing.load(Ordering::SeqCst) && !paused.load(Ordering::SeqCst) {
-                    abort.store(true, Ordering::Relaxed);
-                    sink.clear();
+                update_chunk_lengths();
+                if !check_details() {
                     break;
                 }
-
-                if paused.load(Ordering::SeqCst) && !sink.is_paused() {
-                    sink.pause();
-                } 
-                if !paused.load(Ordering::SeqCst) && sink.is_paused() {
-                    sink.play();
-                }
-
 
                 // If all tracks are finished buffering and sink is finished playing, exit the loop
-                let finished_tracks = finished_tracks.lock().unwrap();
-                if sink.empty() && finished_tracks.len() == length {
+                if sink.empty() && engine.finished_buffering() {
                     break;
                 }
-                drop(finished_tracks);
 
                 thread::sleep(Duration::from_millis(100));
             }
-            
+
+            // ===================== //
+            // Set playback_thread_exists to false
+            // ===================== //
             playback_thread_exists.store(false, Ordering::Relaxed);
         });
     }
 
-    pub fn play_at(&mut self, ts: u32) {
+    pub fn play_at(&mut self, ts: f64) {
         let mut timestamp = self.ts.lock().unwrap();
         *timestamp = ts;
         drop(timestamp);
-        self.play();
+
+        self.kill_current();
+        self.stop.store(false, Ordering::SeqCst);
+        self.initialize_thread(Some(ts));
+
+        self.resume();
     }
 
     pub fn play(&mut self) {
         let thread_exists = self.playback_thread_exists.load(Ordering::SeqCst);
+        self.stop.store(false, Ordering::SeqCst);
 
         if !thread_exists {
-            self.initialize_thread();
+            self.initialize_thread(None);
         }
 
         self.resume();
@@ -300,20 +214,20 @@ impl Player {
         self.paused.store(false, Ordering::SeqCst);
     }
 
-    pub fn stop(&self) {
-        let mut buffer_map = self.buffer_map.lock().unwrap();
+    pub fn kill_current(&self) {
         self.playing.store(false, Ordering::SeqCst);
         self.paused.store(false, Ordering::SeqCst);
 
-        buffer_map.clear();
-
-        drop (buffer_map);
+        self.stop.store(true, Ordering::SeqCst);
 
         while !self.is_finished() {
             thread::sleep(Duration::from_millis(10));
         }
+    }
 
-        self.reset();
+    pub fn stop(&self) {
+        self.kill_current();
+        self.ts.lock().unwrap().clone_from(&0.0);
     }
 
     pub fn is_playing(&self) -> bool {
@@ -324,7 +238,7 @@ impl Player {
         self.paused.load(Ordering::SeqCst)
     }
 
-    pub fn get_time(&self) -> u32 {
+    pub fn get_time(&self) -> f64 {
         let ts = self.ts.lock().unwrap();
         *ts
     }
@@ -348,45 +262,45 @@ impl Player {
         *duration
     }
 
-    fn ready_buffer_map(&mut self, keys: &Vec<i32>) {
-        self.buffer_map = init_buffer_map();
+    pub fn seek(&mut self, ts: f64) {
+        let mut timestamp = self.ts.lock().unwrap();
+        *timestamp = ts;
+        drop(timestamp);
 
-        let sample_rate = self.audio_settings.sample_rate;
-        let buffer_size = sample_rate as usize * 1; // Ten seconds of audio at the sample rate
+        let playing = self.is_playing();
+        let paused = self.is_paused();
+        let stopped = self.stop.load(Ordering::SeqCst);
 
-        for key in keys {
-            let ring_buffer = Bounded::from(vec![0.0; buffer_size]);
-            self.buffer_map.lock().unwrap().insert(*key, ring_buffer);
+        self.kill_current();
+        self.initialize_thread(Some(ts));
+
+        self.stop.store(stopped, Ordering::SeqCst);
+        self.playing.store(playing, Ordering::SeqCst);
+        self.paused.store(paused, Ordering::SeqCst);
+
+        if !paused {
+            self.resume();
         }
     }
 
-    pub fn shuffle(&self) {
-        let ProtInfo { 
-            track_index_array,
-            audio_settings: _,
-            duration: _
-        } = parse_prot(&self.file_path, &self.info);
+    pub fn refresh_tracks(&mut self) {
+        let mut prot = self.prot.lock().unwrap();
+        prot.refresh_tracks();
+        drop(prot);
 
-        let mut self_track_index_array = self.track_index_array.lock().unwrap();
-        self_track_index_array.clone_from(&track_index_array);
-        drop(self_track_index_array);
+        // If stopped, return
+        if self.is_finished() {
+            return;
+        }
 
-        // let keys = self.track_index_array.lock().unwrap().iter().enumerate().map(|(i, _v)| i as i32).collect();
-        // self.ready_buffer_map(&keys);
-    }
-
-    fn reset (&self) {
-        let ProtInfo { 
-            track_index_array,
-            audio_settings: _,
-            duration: _
-        } = parse_prot(&self.file_path, &self.info);
-
-        let mut self_track_index_array = self.track_index_array.lock().unwrap();
-        self_track_index_array.clone_from(&track_index_array);
-        drop(self_track_index_array);
-
-        // let keys = self.track_index_array.lock().unwrap().iter().enumerate().map(|(i, _v)| i as i32).collect();
-        // self.ready_buffer_map(&keys);
+        // Kill current thread and start 
+        // new thread at the current timestamp
+        let ts = self.get_time();
+        self.seek(ts);
+        
+        // If previously playing, resume
+        if self.is_playing() {
+            self.resume();
+        }
     }
 }
