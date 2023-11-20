@@ -124,6 +124,10 @@ impl Player {
             // Update chunk_lengths / time_passed
             // ===================== //
             let update_chunk_lengths = || {
+                if abort.load(Ordering::SeqCst) {
+                    return;
+                }
+                
                 let mut chunk_lengths = chunk_lengths.lock().unwrap();
                 let mut time_passed_unlocked = time_passed.lock().unwrap();
                 // Check how many chunks have been played (chunk_lengths.len() - sink.len())
