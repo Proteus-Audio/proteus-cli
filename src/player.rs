@@ -125,7 +125,7 @@ impl Player {
 
                 let fade_increments = sink.volume() / (fade_length_in_seconds * 100.0);
                 // Fade out and pause sink
-                while sink.volume() > 0.0 && timestamp != 0.0 {
+                while sink.volume() > 0.0 && timestamp != start_time {
                     sink.set_volume(sink.volume() - fade_increments);
                     thread::sleep(Duration::from_millis(10));
                 }
@@ -139,7 +139,7 @@ impl Player {
                 sink.play();
                 while sink.volume() < volume {
                     sink.set_volume(sink.volume() + fade_increments);
-                    thread::sleep(Duration::from_millis(10));
+                    thread::sleep(Duration::from_millis(5));
                 }
             };
 
@@ -149,7 +149,7 @@ impl Player {
             let check_details = || {
                 if abort.load(Ordering::SeqCst) {
                     let sink = sink_mutex.lock().unwrap();
-                    pause_sink(&sink, 0.15);
+                    pause_sink(&sink, 0.1);
                     sink.clear();
                     drop(sink);
                     
@@ -158,10 +158,10 @@ impl Player {
                 
                 let sink = sink_mutex.lock().unwrap();
                 if paused.load(Ordering::SeqCst) && !sink.is_paused() {
-                    pause_sink(&sink, 0.15);
+                    pause_sink(&sink, 0.1);
                 }
                 if !paused.load(Ordering::SeqCst) && sink.is_paused() {
-                    resume_sink(&sink, 0.15);
+                    resume_sink(&sink, 0.1);
                 }
                 drop(sink);
                 

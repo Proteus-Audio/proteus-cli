@@ -150,38 +150,37 @@ fn run(args: &ArgMatches) -> Result<i32> {
     player.play();
 
     let mut loop_iteration = 0;
-    while !player.is_finished() {
-        // if loop_iteration > 0 {
-        //     // println!("Get time: {}", player.get_time());
-        //     println!("Refreshing tracks at {}", format_time(player.get_time() * 1000.0));
-        //     println!("Duration: {}", format_time(player.get_duration() * 1000.0));
-        //     // Measure the time it takes to refresh tracks
-        //     let start = std::time::Instant::now();
-        //     player.refresh_tracks();
-        //     let duration = start.elapsed();
-        //     println!("Refreshed tracks in {}ms", duration.as_millis());
-        //     // println!("Get time: {}", player.get_time());
-        // }
-        // loop_iteration += 1;
+    // while !player.is_finished() {
+    //     if loop_iteration > 0 {
+    //         // println!("Get time: {}", player.get_time());
+    //         println!("Refreshing tracks at {}", format_time(player.get_time() * 1000.0));
+    //         println!("Duration: {}", format_time(player.get_duration() * 1000.0));
+    //         // Measure the time it takes to refresh tracks
+    //         let start = std::time::Instant::now();
+    //         player.refresh_tracks();
+    //         let duration = start.elapsed();
+    //         println!("Refreshed tracks in {}ms", duration.as_millis());
+    //         // println!("Get time: {}", player.get_time());
+    //     }
 
-        // if loop_iteration > 0 {
-        //     if !player.is_paused() {
-        //         player.pause();
-        //     } else {
-        //         // Set volume to random number between 0.0 and 1.0
-        //         let volume = rand::thread_rng().gen_range(0.3..1.0);
-        //         println!("Setting volume to {}", volume);
-        //         player.set_volume(volume);
-        //         println!("Get volume: {}", player.get_volume());
-        //         player.play();
-        //         println!("Starting playback at {}", format_time(player.get_time() * 1000.0));
-        //     }
-        // }
-        // loop_iteration += 1;
+    //     // if loop_iteration > 0 {
+    //     //     if !player.is_paused() {
+    //     //         player.pause();
+    //     //     } else {
+    //     //         // Set volume to random number between 0.0 and 1.0
+    //     //         let volume = rand::thread_rng().gen_range(0.3..1.0);
+    //     //         println!("Setting volume to {}", volume);
+    //     //         player.set_volume(volume);
+    //     //         println!("Get volume: {}", player.get_volume());
+    //     //         player.play();
+    //     //         println!("Starting playback at {}", format_time(player.get_time() * 1000.0));
+    //     //     }
+    //     // }
+    //     loop_iteration += 1;
 
 
-        std::thread::sleep(std::time::Duration::from_secs(2));
-    }
+    //     std::thread::sleep(std::time::Duration::from_secs(2));
+    // }
 
     while !player.is_finished() {
         println!(
