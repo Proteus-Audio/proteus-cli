@@ -383,14 +383,10 @@ impl Player {
     }
 
     pub fn set_volume(&mut self, new_volume: f32) {
-        println!("Setting volume to {}", new_volume);
         let sink = self.sink.lock().unwrap();
-        println!("Unlocked sink");
         sink.set_volume(new_volume);
-        println!("Volume set, dropping sink");
         drop(sink);
-        println!("Set volume to {}", new_volume);
-
+        
         let mut volume = self.volume.lock().unwrap();
         *volume = new_volume;
         drop(volume);
