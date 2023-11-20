@@ -121,9 +121,11 @@ impl Player {
             drop(time_passed_unlocked);
 
             let pause_sink = |sink: &Sink, fade_length_in_seconds: f32| {
+                let timestamp = *time_passed.lock().unwrap();
+
                 let fade_increments = sink.volume() / (fade_length_in_seconds * 100.0);
                 // Fade out and pause sink
-                while sink.volume() > 0.0 {
+                while sink.volume() > 0.0 && timestamp != 0.0 {
                     sink.set_volume(sink.volume() - fade_increments);
                     thread::sleep(Duration::from_millis(10));
                 }
