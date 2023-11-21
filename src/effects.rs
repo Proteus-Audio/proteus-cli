@@ -1,9 +1,9 @@
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use rustfft::{FftPlanner, num_complex::Complex};
 
-use rodio::{Decoder, Source};
+use rodio::Decoder;
 
-pub fn apply_convolution_reverb(mut input_signal: Vec<f32>) -> Vec<f32> {
+pub fn apply_convolution_reverb(input_signal: Vec<f32>) -> Vec<f32> {
     // Load your impulse response (IR) file
     // TODO: This should be done once, not every time the effect is applied
     let ir_signal = load_impulse_response("/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/Impulse Responses/IR.wav");
@@ -35,7 +35,7 @@ pub fn load_impulse_response(file_path: &str) -> Vec<f32> {
     samples
 }
 
-pub fn convolution(input_signal: &[f32], ir_signal: &[f32]) -> Vec<f32> {
+pub fn convolution(_input_signal: &[f32], _ir_signal: &[f32]) -> Vec<f32> {
     // Implement the convolution algorithm
     // This could be direct convolution or FFT-based convolution
 

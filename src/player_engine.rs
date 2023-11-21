@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use std::{collections::HashMap, sync::mpsc::Receiver, thread};
-use std::cmp::*;
 
 use crate::{buffer::*, prot::Prot};
 // use crate::effects::*;

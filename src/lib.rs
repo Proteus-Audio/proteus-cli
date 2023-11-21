@@ -6,3 +6,4 @@ mod track;
 pub mod info;
 pub mod effects;
 pub mod prot;
+pub mod peaks;
