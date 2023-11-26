@@ -23,17 +23,16 @@ pub fn get_time_from_frames(codec_params: &CodecParameters) -> f64 {
     time.seconds as f64 + time.frac
 }
 
-fn get_probe_result_from_string(file_path: &String) -> ProbeResult {
-    let path_str = file_path.as_str();
+pub fn get_probe_result_from_string(file_path: &str) -> ProbeResult {
     // Create a hint to help the format registry guess what format reader is appropriate.
     let mut hint = Hint::new();
 
     // If the path string is '-' then read from standard input.
-    let source = if path_str == "-" {
+    let source = if file_path == "-" {
         Box::new(ReadOnlySource::new(std::io::stdin())) as Box<dyn MediaSource>
     } else {
         // Othwerise, get a Path from the path string.
-        let path = Path::new(path_str);
+        let path = Path::new(file_path);
 
         // Provide the file extension as a hint.
         if let Some(extension) = path.extension() {
@@ -66,7 +65,7 @@ fn get_probe_result_from_string(file_path: &String) -> ProbeResult {
     symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts).unwrap()
 }
 
-fn get_durations(file_path: &String) -> HashMap<u32, f64> {
+fn get_durations(file_path: &str) -> HashMap<u32, f64> {
     let mut probed = get_probe_result_from_string(file_path);
 
     let mut durations: Vec<f64> = Vec::new();

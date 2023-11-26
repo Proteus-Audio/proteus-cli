@@ -12,7 +12,6 @@ use crate::{info::Info, player_engine::PlayerEngine};
 pub struct Player {
     pub info: Info,
     pub finished_tracks: Arc<Mutex<Vec<i32>>>,
-    pub file_path: String,
     pub ts: Arc<Mutex<f64>>,
     playing: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
@@ -36,7 +35,6 @@ impl Player {
         let mut this = Self {
             info,
             finished_tracks: Arc::new(Mutex::new(Vec::new())),
-            file_path: file_path.clone(),
             playing: Arc::new(AtomicBool::new(false)),
             paused: Arc::new(AtomicBool::new(false)),
             ts: Arc::new(Mutex::new(0.0)),
@@ -52,6 +50,36 @@ impl Player {
         this.initialize_thread(None);
 
         this
+    }
+
+    pub fn new_from_file_paths(file_paths: &Vec<Vec<String>>) -> Self {
+        let prot = Arc::new(Mutex::new(Prot::new_from_file_paths(file_paths)));
+        let locked_prot = prot.lock().unwrap();
+        let info = Info::new_from_file_paths(locked_prot.get_file_paths_dictionary());
+        drop(locked_prot);
+        
+        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        let sink: Arc<Mutex<Sink>> = Arc::new(Mutex::new(Sink::try_new(&stream_handle).unwrap()));
+
+        let mut this = Self {
+            info,
+            finished_tracks: Arc::new(Mutex::new(Vec::new())),
+            playing: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            ts: Arc::new(Mutex::new(0.0)),
+            playback_thread_exists: Arc::new(AtomicBool::new(true)),
+            duration: Arc::new(Mutex::new(0.0)),
+            stop: Arc::new(AtomicBool::new(false)),
+            audio_heard: Arc::new(AtomicBool::new(false)),
+            volume: Arc::new(Mutex::new(0.8)),
+            sink,
+            prot,
+        };
+
+        this.initialize_thread(None);
+
+        this
+
     }
 
     fn initialize_thread(&mut self, ts: Option<f64>) {

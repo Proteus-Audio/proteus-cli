@@ -768,7 +768,7 @@ dependencies = [
 
 [[package]]
 name = "proteus_audio"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "clap",
  "dasp_ring_buffer",

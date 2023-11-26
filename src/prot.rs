@@ -1,5 +1,6 @@
 use matroska::{Matroska, Audio, Settings};
 use rand::Rng;
+use symphonia::core::audio::Channels;
 
 use crate::info::*;
 
@@ -166,24 +167,50 @@ impl Prot {
         self.track_ids = Some(track_index_array);
     }
 
-    fn get_audio_settings(file_path: &String) -> Audio {
+    fn get_audio_settings(file_path: &str) -> Audio {
         let file = std::fs::File::open(file_path).unwrap();
 
-        let mka: Matroska = Matroska::open(file).expect("Could not open file");
+        let symph = get_probe_result_from_string(file_path);
 
-        let first_audio_settings = mka
-            .tracks
-            .iter()
-            .find_map(|track| {
-                if let Settings::Audio(audio_settings) = &track.settings {
-                    Some(audio_settings.clone()) // assuming you want to keep the settings, and they are cloneable
-                } else {
-                    None
-                }
-            })
-            .expect("Could not find audio settings");
+        symph.format.tracks();
 
-        first_audio_settings
+        let first_track = &symph.format.tracks()
+        .first().unwrap().codec_params;
+
+        let channels = {
+            let channels_option = first_track.channels.unwrap_or(Channels::FRONT_CENTRE);
+            channels_option.iter().count()
+        };
+
+        let mut bit_depth = None;
+
+        if let Some(bits) = first_track.bits_per_sample {
+            bit_depth = Some(bits as u64)
+        }
+
+        let audio = Audio {
+            sample_rate: first_track.sample_rate.unwrap() as f64,
+            channels: channels as u64,
+            bit_depth
+        };
+
+        audio
+
+        // let mka: Matroska = Matroska::open(file).expect("Could not open file");
+
+        // let first_audio_settings = mka
+        //     .tracks
+        //     .iter()
+        //     .find_map(|track| {
+        //         if let Settings::Audio(audio_settings) = &track.settings {
+        //             Some(audio_settings.clone()) // assuming you want to keep the settings, and they are cloneable
+        //         } else {
+        //             None
+        //         }
+        //     })
+        //     .expect("Could not find audio settings");
+
+        // first_audio_settings
     }
 
     pub fn get_keys(&self) -> Vec<u32> {
@@ -234,5 +261,12 @@ impl Prot {
         }
 
         0
+    }
+
+    pub fn get_file_paths_dictionary(&self) -> Vec<String> {
+        match &self.file_paths_dictionary {
+            Some(dictionary) => dictionary.to_vec(),
+            None => Vec::new()
+        }
     }
 }

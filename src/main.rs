@@ -118,11 +118,9 @@ fn get_double_vec_of_file_paths() -> Vec<Vec<String>> {
 }
 
 fn run(args: &ArgMatches) -> Result<i32> {
-    let file_path = args.get_one::<String>("INPUT").unwrap();
+    let file_path = args.get_one::<String>("INPUT").unwrap().clone();
 
-    println!("file_path: {:?}", file_path);
-
-    // let mut prot = prot::Prot::new_from_file_paths(&get_double_vec_of_file_paths());
+    let mut prot = prot::Prot::new_from_file_paths(&get_double_vec_of_file_paths());
 
     // // loop 10 times
     // for _ in 0..10 {
@@ -145,7 +143,8 @@ fn run(args: &ArgMatches) -> Result<i32> {
         panic!("File is not a .prot file");
     }
 
-    let mut player = player::Player::new(file_path);
+    let mut player = player::Player::new(&file_path);
+    // let mut player = player::Player::new_from_file_paths(&get_double_vec_of_file_paths());
 
     player.play();
 
