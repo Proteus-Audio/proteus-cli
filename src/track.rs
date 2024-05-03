@@ -7,7 +7,7 @@ use symphonia::core::units::Time;
 use std::sync::{Mutex, Arc};
 use std::thread;
 use symphonia::core::errors::Error;
-use symphonia::core::audio::{AudioBufferRef, Signal};
+use symphonia::core::audio::{AudioBufferRef, Signal, Channels};
 use log::warn;
 
 use crate::buffer::buffer_remaining_space;
@@ -22,19 +22,93 @@ pub struct TrackArgs {
     pub start_time: f64,
 }
 
+pub fn convert_signed_24bit_to_f32(sample: i32) -> f32 {
+    // Assuming the 24-bit sample is the least significant bits of a 32-bit integer
+    // Shift to get rid of padding/sign-extension if necessary
+    let shifted_sample = sample << 8 >> 8; // Adjust this based on your data's format
+
+    // Normalize to -1.0 to 1.0 range
+    let normalized_sample = shifted_sample as f32 / 2f32.powi(23);
+
+    normalized_sample
+}
+
+pub fn convert_unsigned_24bit_to_f32(sample: u32) -> f32 {
+    let shifted_sample = sample as i32 - 2i32.pow(23);
+    let normalized_sample = shifted_sample as f32 / 2f32.powi(23);
+    normalized_sample
+}
+
+pub fn convert_signed_16bit_to_f32(sample: i16) -> f32 {
+    sample as f32 / 2f32.powi(15)
+}
+
+pub fn convert_unsigned_16bit_to_f32(sample: u16) -> f32 {
+    let shifted_sample = sample as i16 - 2i16.pow(15);
+    let normalized_sample = shifted_sample as f32 / 2f32.powi(15);
+    normalized_sample
+}
+
+pub fn process_channel(decoded: AudioBufferRef<'_>, channel: usize) -> Vec<f32> {
+    match decoded {
+        AudioBufferRef::U16(buf) => buf
+            .chan(channel)
+            .to_vec()
+            .into_iter()
+            .map(|s| convert_unsigned_16bit_to_f32(s))
+            .collect(),
+
+        AudioBufferRef::S16(buf) => buf
+            .chan(channel)
+            .to_vec()
+            .into_iter()
+            .map(|s| convert_signed_16bit_to_f32(s))
+            .collect(),
+
+        AudioBufferRef::U24(buf) => buf
+            .chan(channel)
+            .to_vec()
+            .into_iter()
+            .map(|s| convert_unsigned_24bit_to_f32(s.0))
+            .collect(),
+
+        AudioBufferRef::S24(buf) => buf
+            .chan(channel)
+            .to_vec()
+            .into_iter()
+            .map(|s| convert_signed_24bit_to_f32(s.0))
+            .collect(),
+
+        AudioBufferRef::F32(buf) => buf.chan(0).to_vec().into_iter().collect(),
+        _ => {
+            // Repeat for the different sample formats.
+            unimplemented!();
+            // return Vec::new();
+        }
+    }
+}
+
 pub fn buffer_track(args: TrackArgs, abort: Arc<AtomicBool>) -> Arc<Mutex<bool>> {
     let TrackArgs { file_path, track_id, track_key, buffer_map, finished_tracks, start_time } = args;
     // Create a channel for sending audio chunks from the decoder to the playback system.
     let (mut decoder, mut format) = open_file(&file_path);
     let playing: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
 
+
+    let channels = {
+        let channels_option = &format
+            .tracks()
+            .first()
+            .unwrap()
+            .codec_params
+            .channels
+            .unwrap_or(Channels::FRONT_CENTRE);
+        channels_option.iter().count()
+    };
+
     thread::spawn(move || {
         // If not explicitly specified, use the first audio track.
         let track_id = track_id.unwrap_or(0);
-        // let track_id = track_id.unwrap_or_else(|| {
-        //     format.tracks().iter().find(|track| track.codec_params. == symphonia::core::media::Type::Audio)
-        //         .expect("no audio track found").id
-        // });
 
         // Get the selected track using the track ID.
         let track = format.tracks().iter().find(|track| track.id == track_id).expect("no track found");
@@ -80,25 +154,34 @@ pub fn buffer_track(args: TrackArgs, abort: Arc<AtomicBool>) -> Arc<Mutex<bool>>
 
             match decoder.decode(&packet) {
                 Ok(decoded) => {
-                    match decoded {
-                        AudioBufferRef::F32(buf) => {
-                            // Convert the interleaved samples to a vector of stereo samples.
-                            // TODO: Support other channel layouts.
-                            let stereo_samples: Vec<f32> = buf.chan(0).to_vec().into_iter().zip(buf.chan(1).to_vec().into_iter())
-                                .flat_map(|(left, right)| vec![left, right])
-                                .collect();
+                    let mut channel_samples = Vec::new();
 
-                            if stereo_samples.len() == 0 {
-                                continue;
-                            }
-
-                            add_samples_to_buffer_map(&mut buffer_map.clone(), track_key, stereo_samples);
-                        }
-                        _ => {
-                            // Repeat for the different sample formats.
-                            unimplemented!()
-                        }
+                    for channel in 0..channels {
+                        // println!("channel: {}", channel);
+                        let samples = process_channel(decoded.clone(), channel);
+                        channel_samples.push(samples);
                     }
+
+                    // TODO: Handle audio channels properly
+                    let channel1 = channel_samples[0].clone();
+                    let channel2 = if channel_samples.len() > 1 {
+                        channel_samples[1].clone()
+                    } else {
+                        channel_samples[0].clone()
+                    };
+
+                    let stereo_samples: Vec<f32> = channel1
+                        .into_iter()
+                        .zip(channel2.into_iter())
+                        .flat_map(|(left, right)| vec![left, right])
+                        .collect();
+
+
+                    if stereo_samples.len() == 0 {
+                        continue;
+                    }
+
+                    add_samples_to_buffer_map(&mut buffer_map.clone(), track_key, stereo_samples);
                 }
                 Err(Error::DecodeError(err)) => {
                     // Decode errors are not fatal. Print the error message and try to decode the next

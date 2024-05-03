@@ -1,6 +1,7 @@
 use clap::{Arg, ArgMatches};
 use log::error;
 use proteus_audio::{info, player, prot};
+use serde_json::Number;
 use symphonia::core::errors::Result;
 use rand::Rng;
 
@@ -18,11 +19,14 @@ fn main() {
                 .conflicts_with_all(&["verify", "decode-only", "verify-only", "probe-only"]),
         )
         .arg(
-            Arg::new("track")
-                .long("track")
-                .short('t')
-                .value_name("TRACK")
-                .help("The track to use"),
+            Arg::new("GAIN")
+                .long("gain")
+                .short('g')
+                .value_name("GAIN")
+                .default_value("70")
+                // .min(0)
+                // .max(100)
+                .help("The playback gain"),
         )
         .arg(
             Arg::new("decode-only")
@@ -90,53 +94,9 @@ fn format_time(time: f64) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
-fn get_double_vec_of_file_paths() -> Vec<Vec<String>> {
-    vec![
-        vec![
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_bgclar1.mp3".to_string(),
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_bgclar2.mp3".to_string(),
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_bgclar3.mp3".to_string(),
-        ],
-        vec![
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_clar1.mp3".to_string(),
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_clar2.mp3".to_string(),
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_clar3.mp3".to_string(),
-        ],
-        vec![
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_piano1.mp3".to_string(),
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_piano2.mp3".to_string(),
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_piano3.mp3".to_string(),
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_piano4.mp3".to_string(),
-        ],
-        vec![
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_rythmn1.mp3".to_string(),
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_rythmn2.mp3".to_string(),
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_rythmn3.mp3".to_string(),
-            "/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/op_rythmn4.mp3".to_string(),
-        ],
-    ]
-}
-
 fn run(args: &ArgMatches) -> Result<i32> {
     let file_path = args.get_one::<String>("INPUT").unwrap().clone();
-
-    let mut prot = prot::Prot::new_from_file_paths(&get_double_vec_of_file_paths());
-
-    // // loop 10 times
-    // for _ in 0..10 {
-    //     println!("Duration: {}", prot.get_duration());
-    //     prot.refresh_tracks();
-    // }
-
-    // prot = prot::Prot::new(&"/Users/innocentsmith/Dev/tauri/proteus-author/dev-assets/export4.prot".to_string());
-
-    // // loop 10 times
-    // for _ in 0..10 {
-    //     println!("Duration: {}", prot.get_duration());
-    //     prot.refresh_tracks();
-    // }
-
-    // return Ok(0);
+    let gain = args.get_one::<String>("GAIN").unwrap().parse::<f32>().unwrap().clone();
 
     // If file is not a .mka file, return an error
     if !(file_path.ends_with(".prot") || file_path.ends_with(".mka")) {
@@ -144,9 +104,16 @@ fn run(args: &ArgMatches) -> Result<i32> {
     }
 
     let mut player = player::Player::new(&file_path);
-    // let mut player = player::Player::new_from_file_paths(&get_double_vec_of_file_paths());
+    
+    let info = info::Info::new(file_path);
+    println!("Files: {:?}", info.file_paths);
+    println!("Duration: {:?}", info.duration_map);
+    println!("Channels: {:?}", info.channels);
+    // println!("Duration: {}", format_time(info.get_duration(0).unwrap() * 1000.0));
 
     player.play();
+
+    player.set_volume(gain / 100.0);
 
     let mut loop_iteration = 0;
     // while !player.is_finished() {

@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use crate::prot::Prot;
 use crate::{info::Info, player_engine::PlayerEngine};
+use crate::timer;
 
 #[derive(Clone)]
 pub struct Player {
@@ -105,6 +106,7 @@ impl Player {
         let audio_heard = self.audio_heard.clone();
         let volume = self.volume.clone();
         let sink_mutex = self.sink.clone();
+        let channels = 1.0 * self.info.channels as f64;
 
         audio_heard.store(false, Ordering::Relaxed);
 
@@ -199,6 +201,12 @@ impl Player {
             // ===================== //
             // Update chunk_lengths / time_passed
             // ===================== //
+            let chunks_passed_mutex = Arc::new(Mutex::new(0.0));
+            let timer_mut = Arc::new(Mutex::new(timer::Timer::new()));
+            let mut timer = timer_mut.lock().unwrap();
+            timer.start();
+            drop(timer);
+
             let update_chunk_lengths = || {
                 if abort.load(Ordering::SeqCst) {
                     return;
@@ -206,19 +214,30 @@ impl Player {
                 
                 let mut chunk_lengths = chunk_lengths.lock().unwrap();
                 let mut time_passed_unlocked = time_passed.lock().unwrap();
+                let mut chunks_passed = chunks_passed_mutex.lock().unwrap();
+                let mut timer = timer_mut.lock().unwrap();
                 // Check how many chunks have been played (chunk_lengths.len() - sink.len())
                 // since the last time this function was called
                 // and add that to time_passed
                 let sink = sink_mutex.lock().unwrap();
                 let chunks_played = chunk_lengths.len() - sink.len();
+
                 drop(sink);
                 
                 for _ in 0..chunks_played {
-                    *time_passed_unlocked += chunk_lengths.remove(0);
+                    timer.reset();
+                    timer.start();
+                    // TODO: Handle audio channels properly. Currently all audio is treated as stereo
+                    // *chunks_passed += chunk_lengths.remove(0) / channels;
+                    *chunks_passed += chunk_lengths.remove(0) / 2.0;
                 }
+
+                *time_passed_unlocked = *chunks_passed + timer.get_time();
 
                 drop(chunk_lengths);
                 drop(time_passed_unlocked);
+                drop(chunks_passed);
+                drop(timer);
             };
 
             // ===================== //
@@ -422,5 +441,11 @@ impl Player {
 
     pub fn get_volume(&self) -> f32 {
         *self.volume.lock().unwrap()
+    }
+
+    pub fn get_ids(&self) -> Vec<String> {
+        let prot = self.prot.lock().unwrap();
+
+        return prot.get_ids();
     }
 }

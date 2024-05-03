@@ -7,20 +7,17 @@ use crate::info::*;
 #[derive(Debug, Clone)]
 pub struct Prot {
     pub info: Info,
-    pub audio_settings: Audio,
     file_path: Option<String>,
     file_paths: Option<Vec<Vec<String>>>,
     file_paths_dictionary: Option<Vec<String>>,
     track_ids: Option<Vec<u32>>,
     track_paths: Option<Vec<String>>,
-    duration: f64,
+    duration: f64
 }
 
 impl Prot {
     pub fn new(file_path: &String) -> Self {
         let info = Info::new(file_path.clone());
-        
-        let audio_settings = Self::get_audio_settings(file_path);
 
         let mut this = Self {
             info,
@@ -29,8 +26,7 @@ impl Prot {
             file_paths_dictionary: None,
             track_ids: None,
             track_paths: None,
-            duration: 0.0,
-            audio_settings
+            duration: 0.0
         };
 
         this.refresh_tracks();
@@ -52,11 +48,6 @@ impl Prot {
 
         let info = Info::new_from_file_paths(file_paths_dictionary.clone());
 
-        // TODO: Get audio settings from the file with
-        // the most channels and use that for all files
-        // Throw error if there are different sample rates
-        let audio_settings = Self::get_audio_settings(&file_paths_dictionary[0]);
-
         let mut this = Self {
             info,
             file_path: None,
@@ -64,8 +55,7 @@ impl Prot {
             file_paths_dictionary: Some(file_paths_dictionary),
             track_ids: None,
             track_paths: None,
-            duration: 0.0,
-            audio_settings
+            duration: 0.0
         };
 
         this.refresh_tracks();
@@ -221,6 +211,18 @@ impl Prot {
 
         if let Some(track_ids) = &self.track_ids {
             return (0..track_ids.len() as u32).collect();
+        }
+
+        Vec::new()
+    }
+
+    pub fn get_ids(&self) ->  Vec<String> {
+        if let Some(track_paths) = &self.track_paths {
+            return track_paths.clone();
+        }
+
+        if let Some(track_ids) = &self.track_ids {
+            return track_ids.into_iter().map(|id| format!("{}", id)).collect();
         }
 
         Vec::new()

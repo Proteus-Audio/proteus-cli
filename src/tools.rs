@@ -20,7 +20,12 @@ pub fn get_reader(file_path: &str) -> Box<dyn FormatReader> {
 
     // Create a probe hint using the file's extension. [Optional]
     let mut hint = Hint::new();
-    hint.with_extension("mka");
+    let mut hint_extension = std::path::Path::new(file_path).extension().unwrap().to_str().unwrap();
+    // if hint_extension == "prot" replace with "mka"
+    if hint_extension == "prot" {
+        hint_extension = "mka";
+    }
+    hint.with_extension(hint_extension);
 
     // Use the default options for metadata and format readers.
     let meta_opts: MetadataOptions = Default::default();

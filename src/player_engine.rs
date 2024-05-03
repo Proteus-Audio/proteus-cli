@@ -34,7 +34,7 @@ impl PlayerEngine {
         };
 
         let prot_unlocked = prot.lock().unwrap();
-        let buffer_size = prot_unlocked.audio_settings.sample_rate as usize * 10; // Ten seconds of audio at the sample rate
+        let buffer_size = prot_unlocked.info.sample_rate as usize * 10; // Ten seconds of audio at the sample rate
         let effects_buffer = Arc::new(Mutex::new(Bounded::from(vec![0.0; buffer_size])));
         drop(prot_unlocked);
 
@@ -67,7 +67,7 @@ impl PlayerEngine {
         let (sender, receiver) = mpsc::sync_channel::<(SamplesBuffer<f32>, f64)>(1);
 
         let prot = self.prot.lock().unwrap();
-        let audio_settings = prot.audio_settings.clone();
+        let audio_info = prot.info.clone();
         drop(prot);
         let buffer_map = self.buffer_map.clone();
         let abort = self.abort.clone();
@@ -165,7 +165,7 @@ impl PlayerEngine {
                         }
 
                         let source =
-                            SamplesBuffer::new(2, audio_settings.sample_rate as u32, samples);
+                            SamplesBuffer::new(2, audio_info.sample_rate as u32, samples);
 
                         controller.add(source.convert_samples().amplify(0.2));
                     }
@@ -184,7 +184,7 @@ impl PlayerEngine {
                         }
 
                         let source =
-                            SamplesBuffer::new(2, audio_settings.sample_rate as u32, samples);
+                            SamplesBuffer::new(2, audio_info.sample_rate as u32, samples);
 
                         controller.add(source.convert_samples().amplify(0.2));
                     }
@@ -206,7 +206,7 @@ impl PlayerEngine {
                     // println!("Mixer size: {:?}", mixer.total_duration());
                     // println!("Smallest buffer size: {:?}", length_of_smallest_buffer);
 
-                    let length_in_seconds = length_of_smallest_buffer as f64 / audio_settings.sample_rate as f64 / audio_settings.channels as f64;
+                    let length_in_seconds = length_of_smallest_buffer as f64 / audio_info.sample_rate as f64 / audio_info.channels as f64;
 
                     sender.send((samples_buffer, length_in_seconds)).unwrap();
                 }
@@ -270,7 +270,7 @@ impl PlayerEngine {
         self.buffer_map = init_buffer_map();
 
         let prot = self.prot.lock().unwrap();
-        let sample_rate = prot.audio_settings.sample_rate;
+        let sample_rate = prot.info.sample_rate;
         drop(prot);
         let buffer_size = sample_rate as usize * 1; // Ten seconds of audio at the sample rate
 
