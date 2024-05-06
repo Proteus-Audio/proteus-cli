@@ -7,7 +7,7 @@ use symphonia::core::units::Time;
 use std::sync::{Mutex, Arc};
 use std::thread;
 use symphonia::core::errors::Error;
-use symphonia::core::audio::{AudioBufferRef, Signal, Channels};
+use symphonia::core::audio::{AudioBufferRef, Signal};
 use log::warn;
 
 use crate::buffer::buffer_remaining_space;
@@ -20,6 +20,7 @@ pub struct TrackArgs {
     pub buffer_map: Arc<Mutex<HashMap<i32, Bounded<Vec<f32>>>>>,
     pub finished_tracks: Arc<Mutex<Vec<i32>>>,
     pub start_time: f64,
+    pub channels: u32
 }
 
 pub fn convert_signed_24bit_to_f32(sample: i32) -> f32 {
@@ -89,22 +90,10 @@ pub fn process_channel(decoded: AudioBufferRef<'_>, channel: usize) -> Vec<f32> 
 }
 
 pub fn buffer_track(args: TrackArgs, abort: Arc<AtomicBool>) -> Arc<Mutex<bool>> {
-    let TrackArgs { file_path, track_id, track_key, buffer_map, finished_tracks, start_time } = args;
+    let TrackArgs { file_path, track_id, track_key, buffer_map, finished_tracks, start_time, channels } = args;
     // Create a channel for sending audio chunks from the decoder to the playback system.
     let (mut decoder, mut format) = open_file(&file_path);
     let playing: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
-
-
-    let channels = {
-        let channels_option = &format
-            .tracks()
-            .first()
-            .unwrap()
-            .codec_params
-            .channels
-            .unwrap_or(Channels::FRONT_CENTRE);
-        channels_option.iter().count()
-    };
 
     thread::spawn(move || {
         // If not explicitly specified, use the first audio track.
@@ -158,7 +147,7 @@ pub fn buffer_track(args: TrackArgs, abort: Arc<AtomicBool>) -> Arc<Mutex<bool>>
 
                     for channel in 0..channels {
                         // println!("channel: {}", channel);
-                        let samples = process_channel(decoded.clone(), channel);
+                        let samples = process_channel(decoded.clone(), channel as usize);
                         channel_samples.push(samples);
                     }
 

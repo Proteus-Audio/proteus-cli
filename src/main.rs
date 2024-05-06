@@ -1,9 +1,12 @@
+use std::sync::{Arc, Mutex};
+
 use clap::{Arg, ArgMatches};
 use log::error;
-use proteus_audio::{info, player, prot};
+use proteus_audio::{info, player, test_data, timer, reporter::Report};
 use serde_json::Number;
 use symphonia::core::errors::Result;
 use rand::Rng;
+
 
 fn main() {
     let args = clap::Command::new("Prot Play")
@@ -103,12 +106,16 @@ fn run(args: &ArgMatches) -> Result<i32> {
         panic!("File is not a .prot file");
     }
 
-    let mut player = player::Player::new(&file_path);
+    // let mut player = player::Player::new(&file_path);
     
-    let info = info::Info::new(file_path);
-    println!("Files: {:?}", info.file_paths);
-    println!("Duration: {:?}", info.duration_map);
-    println!("Channels: {:?}", info.channels);
+    // let info = info::Info::new(file_path);
+    
+
+    let test_data = test_data::TestData::new();
+    let mut player = player::Player::new_from_file_paths(&test_data.wavs);
+    println!("Test info: {:?}", player.info);
+
+    // let test_info = info::Info::new_from_file_paths(test_data.wavs);
     // println!("Duration: {}", format_time(info.get_duration(0).unwrap() * 1000.0));
 
     player.play();
@@ -148,12 +155,61 @@ fn run(args: &ArgMatches) -> Result<i32> {
     //     std::thread::sleep(std::time::Duration::from_secs(2));
     // }
 
+    let mut timer = timer::Timer::new();
+
+    // timer.start();
+    // while timer.get_time().as_secs_f64() < 10.0 {
+    //     println!("Timer: {}", timer.get_time().as_secs_f64());
+    //     std::thread::sleep(std::time::Duration::from_millis(100));
+    // }
+
+    timer.start();
+
+    let reporting_function = |Report{time, playing, ..}| {
+        println!("Time: {} ({})", format_time(time * 1000.0), if playing { "Playing" } else { "Paused" });
+    };
+
+    player.set_reporting(Arc::new(Mutex::new(reporting_function)),
+    std::time::Duration::from_millis(100));
+
+
     while !player.is_finished() {
-        println!(
-            "{} / {}",
-            format_time(player.get_time() * 1000.0),
-            format_time(player.get_duration() * 1000.0)
-        );
+
+    match loop_iteration {
+        10 => {
+            println!("Pausing playback at {}", format_time(player.get_time() * 1000.0));
+            player.pause();
+            timer.pause();
+        },
+        20 => {
+            player.seek(10.0);
+        },
+        30 => {
+            player.seek(2.0);
+        },
+        100 => {
+            timer.start();
+            player.seek(6.0);
+            // Set volume to random number between 0.0 and 1.0
+            let volume = rand::thread_rng().gen_range(0.3..1.0);
+            println!("Setting volume to {}", volume);
+            player.set_volume(volume);
+            println!("Get volume: {}", player.get_volume());
+            player.play();
+            println!("Starting playback at {}", format_time(player.get_time() * 1000.0));
+        },
+        _ => {}
+    }
+
+        loop_iteration += 1;
+
+        // println!(
+        //     "{} / {} ({}) - Timer: {}",
+        //     format_time(player.get_time() * 1000.0),
+        //     format_time(player.get_duration() * 1000.0),
+        //     player.get_time(),
+        //     timer.get_time().as_secs_f64()
+        // );
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 

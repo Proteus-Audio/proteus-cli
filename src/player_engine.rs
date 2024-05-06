@@ -72,9 +72,6 @@ impl PlayerEngine {
         let buffer_map = self.buffer_map.clone();
         let abort = self.abort.clone();
 
-        let playing_map: Arc<Mutex<std::collections::HashMap<i32, Arc<Mutex<bool>>>>> =
-            Arc::new(Mutex::new(std::collections::HashMap::new()));
-
         let finished_tracks = self.finished_tracks.clone();
         let effects_buffer = self.effects_buffer.clone();
         let prot_locked = self.prot.clone();
@@ -86,21 +83,18 @@ impl PlayerEngine {
             drop(prot);
 
             for (key, file_path, track_id) in enumerated_list {
-                let playing = buffer_track(
+                buffer_track(
                     TrackArgs {
                         file_path: file_path.clone(),
                         track_id,
                         track_key: key,
                         buffer_map: buffer_map.clone(),
                         finished_tracks: finished_tracks.clone(),
-                        start_time
+                        start_time,
+                        channels: audio_info.channels,
                     },
                     abort.clone(),
                 );
-
-                let mut playing_map = playing_map.lock().unwrap();
-                playing_map.insert(key, playing);
-                drop(playing_map);
             }
 
             // let sink_mutex_copy = sink_mutex.clone();
@@ -205,6 +199,8 @@ impl PlayerEngine {
 
                     // println!("Mixer size: {:?}", mixer.total_duration());
                     // println!("Smallest buffer size: {:?}", length_of_smallest_buffer);
+
+                    // Samples in the samples_buffer
 
                     let length_in_seconds = length_of_smallest_buffer as f64 / audio_info.sample_rate as f64 / audio_info.channels as f64;
 

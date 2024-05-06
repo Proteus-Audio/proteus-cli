@@ -1,7 +1,7 @@
 use std::{path::Path, fs::File, collections::HashMap};
 
 use symphonia::core::{
-    audio::Layout, codecs::CodecParameters, formats::{FormatOptions, Track}, io::{
+    audio::{Channels, Layout}, codecs::CodecParameters, formats::{FormatOptions, Track}, io::{
         MediaSource, MediaSourceStream, ReadOnlySource
     }, meta::MetadataOptions, probe::{
         Hint,
@@ -114,30 +114,30 @@ fn get_durations(file_path: &str) -> HashMap<u32, f64> {
 #[derive(Debug)]
 pub struct TrackInfo {
     pub sample_rate: u32,
-    pub channel_layout: Layout,
+    pub channel_count: u32,
     pub bits_per_sample: u32,
-}
-
-fn are_layouts_equal(layout1: Layout, layout2: Layout) -> bool {
-    match (layout1, layout2) {
-        (Layout::Mono, Layout::Mono) => true,
-        (Layout::Stereo, Layout::Stereo) => true,
-        (Layout::TwoPointOne, Layout::TwoPointOne) => true,
-        (Layout::FivePointOne, Layout::FivePointOne) => true,
-        // Add other cases if needed
-        _ => false,
-    }
 }
 
 fn get_track_info(track: &Track) -> TrackInfo {
     let codec_params = &track.codec_params;
     let sample_rate = codec_params.sample_rate.unwrap();
-    let channel_layout = codec_params.channel_layout.unwrap();
     let bits_per_sample = codec_params.bits_per_sample.unwrap();
+
+    let mut channel_count = match codec_params.channel_layout {
+        Some(Layout::Mono) => 1,
+        Some(Layout::Stereo) => 2,
+        Some(Layout::TwoPointOne) => 3,
+        Some(Layout::FivePointOne) => 6,
+        _ => 0,
+    };
+
+    if channel_count == 0 {
+        channel_count = codec_params.channels.unwrap_or(Channels::FRONT_CENTRE).iter().count() as u32;
+    }
     
     TrackInfo {
         sample_rate,
-        channel_layout,
+        channel_count,
         bits_per_sample,
     }
 }
@@ -150,8 +150,8 @@ fn reduce_track_infos(track_infos: Vec<TrackInfo>) -> TrackInfo {
                     panic!("Sample rates do not match");
                 }
 
-                if !are_layouts_equal(acc.channel_layout, track_info.channel_layout) {
-                    panic!("Channel layouts do not match");
+                if acc.channel_count != track_info.channel_count {
+                    panic!("Channel layouts do not match {} != {}", acc.channel_count, track_info.channel_count);
                 }
 
                 if acc.bits_per_sample != track_info.bits_per_sample {
@@ -184,20 +184,12 @@ fn gather_track_info_from_file_paths(file_paths: Vec<String>) -> TrackInfo {
     let mut track_infos: Vec<TrackInfo> = Vec::new();
 
     for file_path in file_paths {
+        println!("File path: {:?}", file_path);
         let track_info = gather_track_info(&file_path);
         track_infos.push(track_info);
     }
 
     reduce_track_infos(track_infos)
-}
-
-fn get_channel_count(channel_layout: Layout) -> u32 {
-    match channel_layout {
-        Layout::Mono => 1,
-        Layout::Stereo => 2,
-        Layout::TwoPointOne => 3,
-        Layout::FivePointOne => 6
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -212,12 +204,11 @@ pub struct Info {
 impl Info {
     pub fn new(file_path: String) -> Self {
         let track_info = gather_track_info(&file_path);
-        let channels = get_channel_count(track_info.channel_layout);
 
         Self {
             duration_map: get_durations(&file_path),
             file_paths: vec![file_path],
-            channels,
+            channels: track_info.channel_count,
             sample_rate: track_info.sample_rate,
             bits_per_sample: track_info.bits_per_sample,
         }
@@ -233,12 +224,11 @@ impl Info {
         }
 
         let track_info = gather_track_info_from_file_paths(file_paths.clone());
-        let channels = get_channel_count(track_info.channel_layout);
 
         Self {
             duration_map,
             file_paths,
-            channels,
+            channels: track_info.channel_count,
             sample_rate: track_info.sample_rate,
             bits_per_sample: track_info.bits_per_sample,
         }

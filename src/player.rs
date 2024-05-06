@@ -1,11 +1,13 @@
 use rodio::buffer::SamplesBuffer;
 use rodio::{OutputStream, Sink};
+use symphonia::core::conv::IntoSample;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use crate::prot::Prot;
+use crate::reporter::{Report, Reporter};
 use crate::{info::Info, player_engine::PlayerEngine};
 use crate::timer;
 
@@ -23,41 +25,35 @@ pub struct Player {
     audio_heard: Arc<AtomicBool>,
     volume: Arc<Mutex<f32>>,
     sink: Arc<Mutex<Sink>>,
+    reporter: Option<Arc<Mutex<Reporter>>>
 }
 
 impl Player {
     pub fn new(file_path: &String) -> Self {
-        let info = Info::new(file_path.clone());
-        let prot = Arc::new(Mutex::new(Prot::new(file_path)));
-
-        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-        let sink: Arc<Mutex<Sink>> = Arc::new(Mutex::new(Sink::try_new(&stream_handle).unwrap()));
-
-        let mut this = Self {
-            info,
-            finished_tracks: Arc::new(Mutex::new(Vec::new())),
-            playing: Arc::new(AtomicBool::new(false)),
-            paused: Arc::new(AtomicBool::new(false)),
-            ts: Arc::new(Mutex::new(0.0)),
-            playback_thread_exists: Arc::new(AtomicBool::new(true)),
-            duration: Arc::new(Mutex::new(0.0)),
-            stop: Arc::new(AtomicBool::new(false)),
-            audio_heard: Arc::new(AtomicBool::new(false)),
-            volume: Arc::new(Mutex::new(0.8)),
-            sink,
-            prot,
-        };
-
-        this.initialize_thread(None);
-
+        let this = Self::new_from_path_or_paths(Some(file_path), None);
         this
     }
 
     pub fn new_from_file_paths(file_paths: &Vec<Vec<String>>) -> Self {
-        let prot = Arc::new(Mutex::new(Prot::new_from_file_paths(file_paths)));
-        let locked_prot = prot.lock().unwrap();
-        let info = Info::new_from_file_paths(locked_prot.get_file_paths_dictionary());
-        drop(locked_prot);
+        let this = Self::new_from_path_or_paths(None, Some(file_paths));
+        this
+    }
+
+    pub fn new_from_path_or_paths(path: Option<&String>, paths: Option<&Vec<Vec<String>>>) -> Self {
+        let (prot, info) = match path {
+            Some(path) =>{
+                let prot = Arc::new(Mutex::new(Prot::new(path)));
+                let info = Info::new(path.clone());
+                (prot, info)
+            },
+            None => {
+                let prot = Arc::new(Mutex::new(Prot::new_from_file_paths(paths.unwrap())));
+                let locked_prot = prot.lock().unwrap();
+                let info = Info::new_from_file_paths(locked_prot.get_file_paths_dictionary());
+                drop(locked_prot);
+                (prot, info)
+            },
+        };
         
         let (_stream, stream_handle) = OutputStream::try_default().unwrap();
         let sink: Arc<Mutex<Sink>> = Arc::new(Mutex::new(Sink::try_new(&stream_handle).unwrap()));
@@ -75,12 +71,12 @@ impl Player {
             volume: Arc::new(Mutex::new(0.8)),
             sink,
             prot,
+            reporter: None,
         };
 
         this.initialize_thread(None);
 
         this
-
     }
 
     fn initialize_thread(&mut self, ts: Option<f64>) {
@@ -150,10 +146,10 @@ impl Player {
             *time_passed_unlocked = start_time;
             drop(time_passed_unlocked);
 
-            let pause_sink = |sink: &Sink, fade_length_in_seconds: f32| {
+            let pause_sink = |sink: &Sink, fade_length_out_seconds: f32| {
                 let timestamp = *time_passed.lock().unwrap();
 
-                let fade_increments = sink.volume() / (fade_length_in_seconds * 100.0);
+                let fade_increments = sink.volume() / (fade_length_out_seconds * 100.0);
                 // Fade out and pause sink
                 while sink.volume() > 0.0 && timestamp != start_time {
                     sink.set_volume(sink.volume() - fade_increments);
@@ -201,7 +197,7 @@ impl Player {
             // ===================== //
             // Update chunk_lengths / time_passed
             // ===================== //
-            let chunks_passed_mutex = Arc::new(Mutex::new(0.0));
+            let time_chunks_mutex = Arc::new(Mutex::new(start_time));
             let timer_mut = Arc::new(Mutex::new(timer::Timer::new()));
             let mut timer = timer_mut.lock().unwrap();
             timer.start();
@@ -214,7 +210,7 @@ impl Player {
                 
                 let mut chunk_lengths = chunk_lengths.lock().unwrap();
                 let mut time_passed_unlocked = time_passed.lock().unwrap();
-                let mut chunks_passed = chunks_passed_mutex.lock().unwrap();
+                let mut time_chunks_passed = time_chunks_mutex.lock().unwrap();
                 let mut timer = timer_mut.lock().unwrap();
                 // Check how many chunks have been played (chunk_lengths.len() - sink.len())
                 // since the last time this function was called
@@ -222,21 +218,26 @@ impl Player {
                 let sink = sink_mutex.lock().unwrap();
                 let chunks_played = chunk_lengths.len() - sink.len();
 
-                drop(sink);
-                
+                // println!("Sample: {:?}", sample);
+
                 for _ in 0..chunks_played {
                     timer.reset();
                     timer.start();
-                    // TODO: Handle audio channels properly. Currently all audio is treated as stereo
-                    // *chunks_passed += chunk_lengths.remove(0) / channels;
-                    *chunks_passed += chunk_lengths.remove(0) / 2.0;
+                    *time_chunks_passed += chunk_lengths.remove(0);
                 }
 
-                *time_passed_unlocked = *chunks_passed + timer.get_time();
+                if sink.is_paused() {
+                    timer.pause();
+                } else {
+                    timer.un_pause();
+                }
 
+                *time_passed_unlocked = *time_chunks_passed + timer.get_time().as_secs_f64();
+
+                drop(sink);
                 drop(chunk_lengths);
                 drop(time_passed_unlocked);
-                drop(chunks_passed);
+                drop(time_chunks_passed);
                 drop(timer);
             };
 
@@ -277,7 +278,7 @@ impl Player {
                     break;
                 }
                 
-                thread::sleep(Duration::from_millis(100));
+                thread::sleep(Duration::from_millis(10));
             }
 
             // ===================== //
@@ -447,5 +448,21 @@ impl Player {
         let prot = self.prot.lock().unwrap();
 
         return prot.get_ids();
+    }
+
+    pub fn set_reporting(&mut self, reporting: Arc<Mutex<dyn Fn(Report) + Send>>, reporting_interval: Duration) {
+        if self.reporter.is_some() {
+            self.reporter.as_ref().unwrap().lock().unwrap().stop();
+        }
+
+        let reporter = Arc::new(Mutex::new(Reporter::new(
+            Arc::new(Mutex::new(self.clone())),
+            reporting,
+            reporting_interval,
+        )));
+
+        reporter.lock().unwrap().start();
+
+        self.reporter = Some(reporter);
     }
 }

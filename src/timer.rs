@@ -1,41 +1,55 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct Timer {
-    pub time: f64,
-    running: bool,
-    start_time: Instant,
+    pub time: Duration,
+    start_time: Option<Instant>,
 }
 
 impl Timer {
     pub fn new() -> Self {
         Self {
-            time: 0.0,
-            running: false,
-            start_time: Instant::now(),
+            time: Duration::new(0, 0),
+            start_time: None,
         }
     }
 
     pub fn start(&mut self) {
-        self.start_time = Instant::now();
-        self.running = true;
+        self.start_time = Some(Instant::now());
+    }
+
+    pub fn start_at(&mut self, time: Duration) {
+        self.start_time = Some(Instant::now());
+        self.time = time;
+    }
+
+    pub fn un_pause(&mut self) {
+        if self.start_time == None {
+            self.start_time = Some(Instant::now());
+        }
+    }
+
+    pub fn pause(&mut self) {
+        if let Some(start) = self.start_time {
+            self.time += start.elapsed();
+            self.start_time = None;
+        }
     }
 
     pub fn stop(&mut self) {
-        self.time += self.start_time.elapsed().as_secs_f64();
-        self.running = false;
+        self.reset();
     }
 
-    pub fn get_time(&self) -> f64 {
-        if self.running {
-            self.time + self.start_time.elapsed().as_secs_f64()
+    pub fn get_time(&self) -> Duration {
+        if let Some(start) = self.start_time {
+            self.time + start.elapsed()
         } else {
             self.time
         }
     }
 
     pub fn reset(&mut self) {
-        self.time = 0.0;
-        self.running = false;
+        self.start_time = None;
+        self.time = Duration::new(0, 0);
     }
 }

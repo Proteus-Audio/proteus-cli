@@ -8,3 +8,5 @@ pub mod effects;
 pub mod prot;
 pub mod peaks;
 pub mod timer;
+pub mod test_data;
+pub mod reporter;
