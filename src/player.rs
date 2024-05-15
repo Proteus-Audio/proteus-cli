@@ -11,14 +11,25 @@ use crate::reporter::{Report, Reporter};
 use crate::{info::Info, player_engine::PlayerEngine};
 use crate::timer;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayerState {
+    Init,
+    Resuming,
+    Playing,
+    Pausing,
+    Paused,
+    Stopping,
+    Stopped,
+    Finished,
+}
+
 #[derive(Clone)]
 pub struct Player {
     pub info: Info,
     pub finished_tracks: Arc<Mutex<Vec<i32>>>,
     pub ts: Arc<Mutex<f64>>,
-    playing: Arc<AtomicBool>,
-    paused: Arc<AtomicBool>,
-    stop: Arc<AtomicBool>,
+    state: Arc<Mutex<PlayerState>>,
+    abort: Arc<AtomicBool>,
     playback_thread_exists: Arc<AtomicBool>,
     duration: Arc<Mutex<f64>>,
     prot: Arc<Mutex<Prot>>,
@@ -61,12 +72,11 @@ impl Player {
         let mut this = Self {
             info,
             finished_tracks: Arc::new(Mutex::new(Vec::new())),
-            playing: Arc::new(AtomicBool::new(false)),
-            paused: Arc::new(AtomicBool::new(false)),
+            state: Arc::new(Mutex::new(PlayerState::Stopped)),
+            abort: Arc::new(AtomicBool::new(false)),
             ts: Arc::new(Mutex::new(0.0)),
             playback_thread_exists: Arc::new(AtomicBool::new(true)),
             duration: Arc::new(Mutex::new(0.0)),
-            stop: Arc::new(AtomicBool::new(false)),
             audio_heard: Arc::new(AtomicBool::new(false)),
             volume: Arc::new(Mutex::new(0.8)),
             sink,
@@ -91,11 +101,11 @@ impl Player {
         self.playback_thread_exists.store(true, Ordering::SeqCst);
 
         // ===== Clone variables ===== //
-        let paused = self.paused.clone();
+        let play_state = self.state.clone();
+        let abort = self.abort.clone();
         let playback_thread_exists = self.playback_thread_exists.clone();
         let time_passed = self.ts.clone();
 
-        let abort = self.stop.clone();
         let duration = self.duration.clone();
         let prot = self.prot.clone();
 
@@ -294,7 +304,7 @@ impl Player {
         drop(timestamp);
 
         self.kill_current();
-        self.stop.store(false, Ordering::SeqCst);
+        // self.stop.store(false, Ordering::SeqCst);
         self.initialize_thread(Some(ts));
 
         self.resume();
@@ -307,7 +317,7 @@ impl Player {
 
     pub fn play(&mut self) {
         let thread_exists = self.playback_thread_exists.load(Ordering::SeqCst);
-        self.stop.store(false, Ordering::SeqCst);
+        // self.stop.store(false, Ordering::SeqCst);
 
         if !thread_exists {
             self.initialize_thread(None);
@@ -322,24 +332,28 @@ impl Player {
     }
 
     pub fn pause(&self) {
-        self.playing.store(false, Ordering::SeqCst);
-        self.paused.store(true, Ordering::SeqCst);
+        self.state.lock().unwrap().clone_from(&PlayerState::Pausing);
     }
 
     pub fn resume(&self) {
-        self.playing.store(true, Ordering::SeqCst);
-        self.paused.store(false, Ordering::SeqCst);
+        self.state
+            .lock()
+            .unwrap()
+            .clone_from(&PlayerState::Resuming);
     }
 
     pub fn kill_current(&self) {
-        self.playing.store(false, Ordering::SeqCst);
-        self.paused.store(false, Ordering::SeqCst);
+        self.state
+            .lock()
+            .unwrap()
+            .clone_from(&PlayerState::Stopping);
+        self.abort.store(true, Ordering::SeqCst);
 
-        self.stop.store(true, Ordering::SeqCst);
-
-        while !self.is_finished() {
+        while !self.thread_finished() {
             thread::sleep(Duration::from_millis(10));
         }
+
+        self.state.lock().unwrap().clone_from(&PlayerState::Stopped);
     }
 
     pub fn stop(&self) {
@@ -348,11 +362,13 @@ impl Player {
     }
 
     pub fn is_playing(&self) -> bool {
-        self.playing.load(Ordering::SeqCst)
+        let state = self.state.lock().unwrap();
+        *state == PlayerState::Playing
     }
 
     pub fn is_paused(&self) -> bool {
-        self.paused.load(Ordering::SeqCst)
+        let state = self.state.lock().unwrap();
+        *state == PlayerState::Paused
     }
 
     pub fn get_time(&self) -> f64 {
@@ -360,14 +376,20 @@ impl Player {
         *ts
     }
 
-    pub fn is_finished(&self) -> bool {
+    fn thread_finished(&self) -> bool {
         let playback_thread_exists = self.playback_thread_exists.load(Ordering::SeqCst);
         !playback_thread_exists
     }
 
+    pub fn is_finished(&self) -> bool {
+        self.thread_finished()
+        // let state = self.state.lock().unwrap();
+        // *state == PlayerState::Finished
+    }
+
     pub fn sleep_until_end(&self) {
         loop {
-            if self.is_finished() {
+            if self.thread_finished() {
                 break;
             }
             thread::sleep(Duration::from_millis(100));
@@ -384,19 +406,20 @@ impl Player {
         *timestamp = ts;
         drop(timestamp);
 
-        let playing = self.is_playing();
-        let paused = self.is_paused();
-        let stopped = self.stop.load(Ordering::SeqCst);
+        let state = self.state.lock().unwrap().clone();
 
         self.kill_current();
+        self.state.lock().unwrap().clone_from(&state);
         self.initialize_thread(Some(ts));
 
-        self.stop.store(stopped, Ordering::SeqCst);
-        self.playing.store(playing, Ordering::SeqCst);
-        self.paused.store(paused, Ordering::SeqCst);
+        match state {
+            PlayerState::Playing => self.resume(),
+            PlayerState::Paused => {
+                self.audition(Duration::from_millis(100));
+            }
+            _ => {
 
-        if !paused {
-            self.resume();
+            }
         }
     }
 
@@ -406,7 +429,7 @@ impl Player {
         drop(prot);
 
         // If stopped, return
-        if self.is_finished() {
+        if self.thread_finished() {
             return;
         }
 
@@ -450,7 +473,11 @@ impl Player {
         return prot.get_ids();
     }
 
-    pub fn set_reporting(&mut self, reporting: Arc<Mutex<dyn Fn(Report) + Send>>, reporting_interval: Duration) {
+    pub fn set_reporting(
+        &mut self,
+        reporting: Arc<Mutex<dyn Fn(Report) + Send>>,
+        reporting_interval: Duration,
+    ) {
         if self.reporter.is_some() {
             self.reporter.as_ref().unwrap().lock().unwrap().stop();
         }
