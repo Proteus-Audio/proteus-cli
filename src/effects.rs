@@ -1,7 +1,8 @@
 use std::io::BufReader;
 use rustfft::{FftPlanner, num_complex::Complex};
 
-use rodio::Decoder;
+use rodio::{buffer::SamplesBuffer, Decoder, Source};
+use symphonia::core::audio::SampleBuffer;
 
 pub fn apply_convolution_reverb(input_signal: Vec<f32>) -> Vec<f32> {
     // Load your impulse response (IR) file
@@ -79,4 +80,34 @@ pub fn simple_reverb(samples: Vec<f32>, delay_samples: usize, decay: f32) -> Vec
         processed.push(current_sample);
     }
     processed
+}
+
+// pub fn clone_sample_buffer(buffer: &SamplesBuffer<f32>) -> SamplesBuffer<f32> {
+//     let sample_rate = buffer.sample_rate();
+//     let cloned = buffer.copied();
+//     let buffered = buffer.buffered();
+//     let vector_samples = buffered.clone().into_iter().collect::<Vec<f32>>();
+//     let cloned = SamplesBuffer::new(buffered.channels(), sample_rate, vector_samples);
+//     cloned
+// }
+// fn clone_samples_buffer(buffer: &SamplesBuffer<f32>) -> SamplesBuffer<f32> {
+//     // Extract the properties of the original buffer
+//     let channels = buffer.channels();
+//     let sample_rate = buffer.sample_rate();
+//     let samples = buffer.clone().collect(); // Collect the samples into a Vec<f32>
+//     // let samples: Vec<f32> = buffer.clone().collect(); // Collect the samples into a Vec<f32>
+
+//     // Create a new SamplesBuffer with the same properties and samples
+//     // SamplesBuffer::new(channels, sample_rate, samples)
+//     samples
+// }
+
+
+pub fn clone_samples_buffer(buffer: SamplesBuffer<f32>) -> (SamplesBuffer<f32>, SamplesBuffer<f32>) {
+        let sample_rate = buffer.sample_rate();
+        let buffered = buffer.buffered();
+        let vector_samples = buffered.clone().into_iter().collect::<Vec<f32>>();
+        let clone1 = SamplesBuffer::new(buffered.channels(), sample_rate, vector_samples.clone());
+        let clone2 = SamplesBuffer::new(buffered.channels(), sample_rate, vector_samples);
+        (clone1, clone2)
 }

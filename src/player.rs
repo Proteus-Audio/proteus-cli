@@ -1,15 +1,16 @@
 use rodio::buffer::SamplesBuffer;
-use rodio::{OutputStream, Sink};
-use symphonia::core::conv::IntoSample;
+use rodio::{OutputStream, Sink, Source};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use symphonia::core::conv::IntoSample;
 
+use crate::effects::clone_samples_buffer;
 use crate::prot::Prot;
 use crate::reporter::{Report, Reporter};
-use crate::{info::Info, player_engine::PlayerEngine};
 use crate::timer;
+use crate::{info::Info, player_engine::PlayerEngine};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayerState {
@@ -36,7 +37,8 @@ pub struct Player {
     audio_heard: Arc<AtomicBool>,
     volume: Arc<Mutex<f32>>,
     sink: Arc<Mutex<Sink>>,
-    reporter: Option<Arc<Mutex<Reporter>>>
+    audition_source: Arc<Mutex<Option<SamplesBuffer<f32>>>>,
+    reporter: Option<Arc<Mutex<Reporter>>>,
 }
 
 impl Player {
@@ -52,22 +54,24 @@ impl Player {
 
     pub fn new_from_path_or_paths(path: Option<&String>, paths: Option<&Vec<Vec<String>>>) -> Self {
         let (prot, info) = match path {
-            Some(path) =>{
+            Some(path) => {
                 let prot = Arc::new(Mutex::new(Prot::new(path)));
                 let info = Info::new(path.clone());
                 (prot, info)
-            },
+            }
             None => {
                 let prot = Arc::new(Mutex::new(Prot::new_from_file_paths(paths.unwrap())));
                 let locked_prot = prot.lock().unwrap();
                 let info = Info::new_from_file_paths(locked_prot.get_file_paths_dictionary());
                 drop(locked_prot);
                 (prot, info)
-            },
+            }
         };
-        
+
         let (_stream, stream_handle) = OutputStream::try_default().unwrap();
         let sink: Arc<Mutex<Sink>> = Arc::new(Mutex::new(Sink::try_new(&stream_handle).unwrap()));
+        let (_stream, audition_stream_handle) = OutputStream::try_default().unwrap();
+        let audition_sink = Arc::new(Mutex::new(Sink::try_new(&audition_stream_handle).unwrap()));
 
         let mut this = Self {
             info,
@@ -80,6 +84,7 @@ impl Player {
             audio_heard: Arc::new(AtomicBool::new(false)),
             volume: Arc::new(Mutex::new(0.8)),
             sink,
+            audition_source: Arc::new(Mutex::new(None)),
             prot,
             reporter: None,
         };
@@ -89,6 +94,30 @@ impl Player {
         this
     }
 
+    fn audition(&self, length: Duration) {
+        let audition_source_mutex = self.audition_source.clone();
+
+        // Create new thread to audition
+        thread::spawn(move || {
+            // Wait until audition source is ready
+            while audition_source_mutex.lock().unwrap().is_none() {
+                thread::sleep(Duration::from_millis(10));
+            }
+
+            let audition_source_option = audition_source_mutex.lock().unwrap().take();
+            let audition_source = audition_source_option.unwrap();
+
+            let (_stream, audition_stream_handle) = OutputStream::try_default().unwrap();
+            let audition_sink = Sink::try_new(&audition_stream_handle).unwrap();
+            audition_sink.pause();
+            audition_sink.set_volume(0.8);
+            audition_sink.append(audition_source);
+            audition_sink.play();
+            thread::sleep(length);
+            audition_sink.pause();
+        });
+    }
+
     fn initialize_thread(&mut self, ts: Option<f64>) {
         // Empty finished_tracks
         let mut finished_tracks = self.finished_tracks.lock().unwrap();
@@ -96,8 +125,7 @@ impl Player {
         drop(finished_tracks);
 
         // ===== Set play options ===== //
-        self.playing.store(false, Ordering::SeqCst);
-        self.paused.store(true, Ordering::SeqCst);
+        self.abort.store(false, Ordering::SeqCst);
         self.playback_thread_exists.store(true, Ordering::SeqCst);
 
         // ===== Clone variables ===== //
@@ -112,9 +140,14 @@ impl Player {
         let audio_heard = self.audio_heard.clone();
         let volume = self.volume.clone();
         let sink_mutex = self.sink.clone();
+        let audition_source_mutex = self.audition_source.clone();
         let channels = 1.0 * self.info.channels as f64;
 
         audio_heard.store(false, Ordering::Relaxed);
+        // clear audition source
+        let mut audition_source = audition_source_mutex.lock().unwrap();
+        *audition_source = None;
+        drop(audition_source);
 
         // ===== Start playback ===== //
         thread::spawn(move || {
@@ -122,7 +155,6 @@ impl Player {
             // Set playback_thread_exists to true
             // ===================== //
             playback_thread_exists.store(true, Ordering::Relaxed);
-
 
             // ===================== //
             // Initialize engine & sink
@@ -137,8 +169,8 @@ impl Player {
 
             let mut sink = sink_mutex.lock().unwrap();
             *sink = Sink::try_new(&stream_handle).unwrap();
+            sink.pause();
             sink.set_volume(*volume.lock().unwrap());
-            sink.play();
             drop(sink);
 
             // ===================== //
@@ -180,6 +212,11 @@ impl Player {
             };
 
             // ===================== //
+            // Start sink with fade in
+            // ===================== //
+            // resume_sink(&sink_mutex.lock().unwrap(), 0.1);
+
+            // ===================== //
             // Check if the player should be paused or not
             // ===================== //
             let check_details = || {
@@ -188,19 +225,22 @@ impl Player {
                     pause_sink(&sink, 0.1);
                     sink.clear();
                     drop(sink);
-                    
+
                     return false;
                 }
-                
+
                 let sink = sink_mutex.lock().unwrap();
-                if paused.load(Ordering::SeqCst) && !sink.is_paused() {
+                let state = play_state.lock().unwrap().clone();
+                if state == PlayerState::Pausing {
                     pause_sink(&sink, 0.1);
+                    play_state.lock().unwrap().clone_from(&PlayerState::Paused);
                 }
-                if !paused.load(Ordering::SeqCst) && sink.is_paused() {
+                if state == PlayerState::Resuming {
                     resume_sink(&sink, 0.1);
+                    play_state.lock().unwrap().clone_from(&PlayerState::Playing);
                 }
                 drop(sink);
-                
+
                 return true;
             };
 
@@ -217,7 +257,7 @@ impl Player {
                 if abort.load(Ordering::SeqCst) {
                     return;
                 }
-                
+
                 let mut chunk_lengths = chunk_lengths.lock().unwrap();
                 let mut time_passed_unlocked = time_passed.lock().unwrap();
                 let mut time_chunks_passed = time_chunks_mutex.lock().unwrap();
@@ -227,8 +267,6 @@ impl Player {
                 // and add that to time_passed
                 let sink = sink_mutex.lock().unwrap();
                 let chunks_played = chunk_lengths.len() - sink.len();
-
-                // println!("Sample: {:?}", sample);
 
                 for _ in 0..chunks_played {
                     timer.reset();
@@ -257,11 +295,23 @@ impl Player {
             let update_sink = |(mixer, length_in_seconds): (SamplesBuffer<f32>, f64)| {
                 audio_heard.store(true, Ordering::Relaxed);
 
+                let mut audition_source = audition_source_mutex.lock().unwrap();
                 let sink = sink_mutex.lock().unwrap();
-                sink.append(mixer);
+                let mut chunk_lengths = chunk_lengths.lock().unwrap();
+
+                let total_time = chunk_lengths.iter().sum::<f64>();
+
+                // If total_time is less than 0.2 seconds, audition the chunk
+                if audition_source.is_none() {
+                    let (mixer_clone, mixer) = clone_samples_buffer(mixer);
+                    *audition_source = Some(mixer_clone);
+                    drop(audition_source);
+                    sink.append(mixer);
+                } else {
+                    sink.append(mixer);
+                }
                 drop(sink);
 
-                let mut chunk_lengths = chunk_lengths.lock().unwrap();
                 chunk_lengths.push(length_in_seconds);
                 drop(chunk_lengths);
 
@@ -279,7 +329,7 @@ impl Player {
                 if !check_details() {
                     break;
                 }
-                
+
                 let sink = sink_mutex.lock().unwrap();
                 let sink_empty = sink.empty();
                 drop(sink);
@@ -287,7 +337,7 @@ impl Player {
                 if sink_empty && engine.finished_buffering() {
                     break;
                 }
-                
+
                 thread::sleep(Duration::from_millis(10));
             }
 
@@ -421,6 +471,7 @@ impl Player {
 
             }
         }
+
     }
 
     pub fn refresh_tracks(&mut self) {
@@ -433,11 +484,11 @@ impl Player {
             return;
         }
 
-        // Kill current thread and start 
+        // Kill current thread and start
         // new thread at the current timestamp
         let ts = self.get_time();
         self.seek(ts);
-        
+
         // If previously playing, resume
         if self.is_playing() {
             self.resume();
@@ -457,7 +508,7 @@ impl Player {
         let sink = self.sink.lock().unwrap();
         sink.set_volume(new_volume);
         drop(sink);
-        
+
         let mut volume = self.volume.lock().unwrap();
         *volume = new_volume;
         drop(volume);
