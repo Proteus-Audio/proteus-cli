@@ -1,14 +1,14 @@
+use dasp_ring_buffer::Bounded;
+use log::warn;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
-use dasp_ring_buffer::Bounded;
+use symphonia::core::audio::{AudioBufferRef, Signal};
+use symphonia::core::errors::Error;
 use symphonia::core::formats::{SeekMode, SeekTo};
 use symphonia::core::units::Time;
-use std::sync::{Mutex, Arc};
-use std::thread;
-use symphonia::core::errors::Error;
-use symphonia::core::audio::{AudioBufferRef, Signal};
-use log::warn;
 
 use crate::buffer::buffer_remaining_space;
 use crate::tools::open_file;
@@ -16,11 +16,11 @@ use crate::tools::open_file;
 pub struct TrackArgs {
     pub file_path: String,
     pub track_id: Option<u32>,
-    pub track_key: i32,
-    pub buffer_map: Arc<Mutex<HashMap<i32, Bounded<Vec<f32>>>>>,
-    pub finished_tracks: Arc<Mutex<Vec<i32>>>,
+    pub track_key: u16,
+    pub buffer_map: Arc<Mutex<HashMap<u16, Bounded<Vec<f32>>>>>,
+    pub finished_tracks: Arc<Mutex<Vec<u16>>>,
     pub start_time: f64,
-    pub channels: u32
+    pub channels: u8,
 }
 
 pub fn convert_signed_24bit_to_f32(sample: i32) -> f32 {
@@ -90,7 +90,15 @@ pub fn process_channel(decoded: AudioBufferRef<'_>, channel: usize) -> Vec<f32> 
 }
 
 pub fn buffer_track(args: TrackArgs, abort: Arc<AtomicBool>) -> Arc<Mutex<bool>> {
-    let TrackArgs { file_path, track_id, track_key, buffer_map, finished_tracks, start_time, channels } = args;
+    let TrackArgs {
+        file_path,
+        track_id,
+        track_key,
+        buffer_map,
+        finished_tracks,
+        start_time,
+        channels,
+    } = args;
     // Create a channel for sending audio chunks from the decoder to the playback system.
     let (mut decoder, mut format) = open_file(&file_path);
     let playing: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
@@ -100,18 +108,31 @@ pub fn buffer_track(args: TrackArgs, abort: Arc<AtomicBool>) -> Arc<Mutex<bool>>
         let track_id = track_id.unwrap_or(0);
 
         // Get the selected track using the track ID.
-        let track = format.tracks().iter().find(|track| track.id == track_id).expect("no track found");
+        let track = format
+            .tracks()
+            .iter()
+            .find(|track| track.id == track_id)
+            .expect("no track found");
 
         // Get the selected track's timebase and duration.
         // let tb = track.codec_params.time_base;
-        let dur = track.codec_params.n_frames.map(|frames| track.codec_params.start_ts + frames);
+        let dur = track
+            .codec_params
+            .n_frames
+            .map(|frames| track.codec_params.start_ts + frames);
 
         // Start time at given time
         let seconds = start_time.floor() as u64;
         let frac_of_second = start_time.fract();
         let time = Time::new(seconds, frac_of_second);
 
-        let seek_success = format.seek(SeekMode::Coarse, SeekTo::Time { time, track_id: Some(track_id) });
+        let seek_success = format.seek(
+            SeekMode::Coarse,
+            SeekTo::Time {
+                time,
+                track_id: Some(track_id),
+            },
+        );
 
         if seek_success.is_err() {
             mark_track_as_finished(&mut finished_tracks.clone(), track_key);
@@ -165,7 +186,6 @@ pub fn buffer_track(args: TrackArgs, abort: Arc<AtomicBool>) -> Arc<Mutex<bool>>
                         .flat_map(|(left, right)| vec![left, right])
                         .collect();
 
-
                     if stereo_samples.len() == 0 {
                         continue;
                     }
@@ -193,11 +213,14 @@ pub fn buffer_track(args: TrackArgs, abort: Arc<AtomicBool>) -> Arc<Mutex<bool>>
     return playing;
 }
 
-fn add_samples_to_buffer_map(buffer_map: &mut Arc<Mutex<HashMap<i32, Bounded<Vec<f32>>>>>, track_key: i32, samples: Vec<f32>) {    
+fn add_samples_to_buffer_map(
+    buffer_map: &mut Arc<Mutex<HashMap<u16, Bounded<Vec<f32>>>>>,
+    track_key: u16,
+    samples: Vec<f32>,
+) {
     while buffer_remaining_space(buffer_map, track_key) < samples.len() {
         thread::sleep(Duration::from_millis(100));
     }
-
 
     let mut hash_buffer = buffer_map.lock().unwrap();
 
@@ -208,7 +231,7 @@ fn add_samples_to_buffer_map(buffer_map: &mut Arc<Mutex<HashMap<i32, Bounded<Vec
     drop(hash_buffer);
 }
 
-fn mark_track_as_finished(finished_tracks: &mut Arc<Mutex<Vec<i32>>>, track_key: i32) {
+fn mark_track_as_finished(finished_tracks: &mut Arc<Mutex<Vec<u16>>>, track_key: u16) {
     let mut finished_tracks_copy = finished_tracks.lock().unwrap();
     finished_tracks_copy.push(track_key);
     drop(finished_tracks_copy);

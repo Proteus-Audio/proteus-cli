@@ -143,7 +143,19 @@ fn run(args: &ArgMatches) -> Result<i32> {
         Duration::from_millis(100),
     );
 
+    // player.pause();
+
     while !player.is_finished() {
+        // player.shuffle();
+        // println!("Shuffling");
+        // match loop_iteration {
+        //     10 => player.shuffle(),
+        //     20 => player.shuffle(),
+        //     30 => player.shuffle(),
+        //     40 => player.shuffle(),
+        //     50 => player.shuffle(),
+        //     _ => {}
+        // }
         // match loop_iteration {
         //     10 => {
         //         println!(
@@ -194,7 +206,8 @@ fn run(args: &ArgMatches) -> Result<i32> {
         //     player.get_time(),
         //     timer.get_time().as_secs_f64()
         // );
-        sleep(Duration::from_millis(100));
+        sleep(Duration::from_secs(1));
+        // sleep(Duration::from_millis(100));
     }
 
     Ok(0)

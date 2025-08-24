@@ -1,12 +1,11 @@
 use rodio::buffer::SamplesBuffer;
-use rodio::{OutputStream, Sink, Source};
+use rodio::{OutputStream, Sink};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use symphonia::core::conv::IntoSample;
 
-use crate::effects::clone_samples_buffer;
+use crate::effects::effects::clone_samples_buffer;
 use crate::prot::Prot;
 use crate::reporter::{Report, Reporter};
 use crate::timer;

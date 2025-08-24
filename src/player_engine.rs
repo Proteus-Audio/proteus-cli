@@ -1,7 +1,7 @@
 use dasp_ring_buffer::Bounded;
 use rodio::{
     buffer::SamplesBuffer,
-    dynamic_mixer::{self, DynamicMixer},
+    dynamic_mixer::{self},
     Source,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,24 +9,28 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use std::{collections::HashMap, sync::mpsc::Receiver, thread};
 
-use crate::{buffer::*, prot::Prot};
+use crate::{buffer::*, effects::reverb::Reverb, prot::Prot};
 // use crate::effects::*;
 use crate::track::*;
 
 #[derive(Debug, Clone)]
 pub struct PlayerEngine {
-    pub finished_tracks: Arc<Mutex<Vec<i32>>>,
+    pub finished_tracks: Arc<Mutex<Vec<u16>>>,
     start_time: f64,
     abort: Arc<AtomicBool>,
-    buffer_map: Arc<Mutex<HashMap<i32, Bounded<Vec<f32>>>>>,
+    buffer_map: Arc<Mutex<HashMap<u16, Bounded<Vec<f32>>>>>,
     effects_buffer: Arc<Mutex<Bounded<Vec<f32>>>>,
     prot: Arc<Mutex<Prot>>,
 }
 
 impl PlayerEngine {
-    pub fn new(prot: Arc<Mutex<Prot>>, abort_option: Option<Arc<AtomicBool>>, start_time: f64) -> Self {
+    pub fn new(
+        prot: Arc<Mutex<Prot>>,
+        abort_option: Option<Arc<AtomicBool>>,
+        start_time: f64,
+    ) -> Self {
         let buffer_map = init_buffer_map();
-        let finished_tracks: Arc<Mutex<Vec<i32>>> = Arc::new(Mutex::new(Vec::new()));
+        let finished_tracks: Arc<Mutex<Vec<u16>>> = Arc::new(Mutex::new(Vec::new()));
         let abort = if abort_option.is_some() {
             abort_option.unwrap()
         } else {
@@ -44,7 +48,7 @@ impl PlayerEngine {
             buffer_map,
             effects_buffer,
             abort,
-            prot
+            prot,
         };
 
         this
@@ -91,7 +95,7 @@ impl PlayerEngine {
                         buffer_map: buffer_map.clone(),
                         finished_tracks: finished_tracks.clone(),
                         start_time,
-                        channels: audio_info.channels,
+                        channels: audio_info.channels as u8,
                     },
                     abort.clone(),
                 );
@@ -100,6 +104,9 @@ impl PlayerEngine {
             // let sink_mutex_copy = sink_mutex.clone();
             let hash_buffer_copy = buffer_map.clone();
 
+            let mut reverb = Reverb::new(2, 0.000004);
+            // let mut reverb = Reverb::new(2, 0.00001);
+
             loop {
                 if abort.load(Ordering::SeqCst) {
                     break;
@@ -107,7 +114,7 @@ impl PlayerEngine {
 
                 let mut hash_buffer = hash_buffer_copy.lock().unwrap();
 
-                let mut removable_tracks: Vec<i32> = Vec::new();
+                let mut removable_tracks: Vec<u16> = Vec::new();
 
                 // if all buffers are not empty, add samples from each buffer to the mixer
                 // until at least one buffer is empty
@@ -132,21 +139,21 @@ impl PlayerEngine {
                     break;
                 }
 
-                if all_buffers_full || (effects_buffer.lock().unwrap().len() > 0 && hash_buffer.len() == 0) {
+                if all_buffers_full
+                    || (effects_buffer.lock().unwrap().len() > 0 && hash_buffer.len() == 0)
+                {
                     let (controller, mixer) = dynamic_mixer::mixer::<f32>(2, 44_100);
-                    
+
                     // Hash buffer plus effects buffer
                     let mut effects_buffer_unlocked = effects_buffer.lock().unwrap();
-                    let mut combined_buffer: HashMap<i32, Bounded<Vec<f32>>> = HashMap::new();
+                    let mut combined_buffer: HashMap<u16, Bounded<Vec<f32>>> = HashMap::new();
                     for (track_key, buffer) in hash_buffer.iter() {
                         combined_buffer.insert(*track_key, buffer.clone());
                     }
 
-
                     // combined_buffer.append(&mut effects_buffer.lock().unwrap());
                     // combined_buffer.insert(*track_key, combined_buffer);
 
-                    
                     let length_of_smallest_buffer = hash_buffer
                         .iter()
                         .map(|(_, buffer)| buffer.len())
@@ -158,27 +165,26 @@ impl PlayerEngine {
                             samples.push(buffer.pop().unwrap());
                         }
 
-                        let source =
-                            SamplesBuffer::new(2, audio_info.sample_rate as u32, samples);
+                        let source = SamplesBuffer::new(2, audio_info.sample_rate as u32, samples);
 
                         controller.add(source.convert_samples().amplify(0.2));
                     }
 
                     // Add effects buffer to mixer
-                    let num_effects_samples = if effects_buffer_unlocked.len() < length_of_smallest_buffer {
-                        effects_buffer_unlocked.len()
-                    } else {
-                        length_of_smallest_buffer
-                    };
-                    
+                    let num_effects_samples =
+                        if effects_buffer_unlocked.len() < length_of_smallest_buffer {
+                            effects_buffer_unlocked.len()
+                        } else {
+                            length_of_smallest_buffer
+                        };
+
                     {
                         let mut samples: Vec<f32> = Vec::new();
                         for _ in 0..num_effects_samples {
                             samples.push(effects_buffer_unlocked.pop().unwrap());
                         }
 
-                        let source =
-                            SamplesBuffer::new(2, audio_info.sample_rate as u32, samples);
+                        let source = SamplesBuffer::new(2, audio_info.sample_rate as u32, samples);
 
                         controller.add(source.convert_samples().amplify(0.2));
                     }
@@ -187,8 +193,9 @@ impl PlayerEngine {
 
                     // let buffer = mixer.buffered().reverb(Duration::from_millis(100), 0.5).buffered();
 
-                    let samples_buffer =
-                        PlayerEngine::process_effects(mixer, effects_buffer.clone());
+                    // let samples_buffer =
+                    //     PlayerEngine::process_effects(mixer, effects_buffer.clone());
+                    let samples_buffer = reverb.process_mixer(mixer);
 
                     // while let Some(sample) = mixer.next() {
                     //     // mixer.sample_rate();
@@ -202,7 +209,9 @@ impl PlayerEngine {
 
                     // Samples in the samples_buffer
 
-                    let length_in_seconds = length_of_smallest_buffer as f64 / audio_info.sample_rate as f64 / audio_info.channels as f64;
+                    let length_in_seconds = length_of_smallest_buffer as f64
+                        / audio_info.sample_rate as f64
+                        / audio_info.channels as f64;
 
                     sender.send((samples_buffer, length_in_seconds)).unwrap();
                 }
@@ -215,46 +224,6 @@ impl PlayerEngine {
 
         // Arc::new(receiver)
         receiver
-    }
-
-    pub fn process_effects(
-        mixer: DynamicMixer<f32>,
-        _effects_buffer: Arc<Mutex<Bounded<Vec<f32>>>>,
-    ) -> SamplesBuffer<f32> {
-        // TODO: Implement effects
-        let sample_rate = mixer.sample_rate();
-        let mixer_buffered = mixer.buffered();
-        // let starting_length = mixer_buffered.clone().into_iter().count();
-        // // let samples: Vec<f32> = mixer.buffered().take(length_of_smallest_buffer).collect();
-        // let mut samples: Vec<f32> = Vec::new();
-        // let mut left_over_samples: Vec<f32> = Vec::new();
-
-        let vector_samples = mixer_buffered.clone().into_iter().collect::<Vec<f32>>();
-
-        // let max = mixer_buffered.clone().max_by(|x, y| x.abs().total_cmp(&y.abs()));
-        // println!("Max peak: {:?}", max);
-        
-        // let samples_with_reverb = apply_convolution_reverb(vector_samples);
-        // let samples_with_reverb = simple_reverb(vector_samples, 22050, 0.5);
-
-        // let mut index = 0;
-        // for sample in vector_samples {
-        //     index += 1;
-
-        //     if index <= starting_length {
-        //         samples.push(sample);
-        //     } else {
-        //         left_over_samples.push(sample);
-        //     }
-        // }
-
-        // let mut effects_buffer_unlocked = effects_buffer.lock().unwrap();
-        // for sample in left_over_samples {
-        //     effects_buffer_unlocked.push(sample);
-        // }
-        // drop(effects_buffer_unlocked);
-
-        SamplesBuffer::new(mixer_buffered.channels(), sample_rate, vector_samples)
     }
 
     pub fn get_duration(&self) -> f64 {
@@ -275,7 +244,7 @@ impl PlayerEngine {
             self.buffer_map
                 .lock()
                 .unwrap()
-                .insert(*key as i32, ring_buffer);
+                .insert(*key as u16, ring_buffer);
         }
     }
 
@@ -290,7 +259,7 @@ impl PlayerEngine {
         drop(prot);
 
         for key in keys {
-            if !finished_tracks.contains(&(key as i32)) {
+            if !finished_tracks.contains(&(key as u16)) {
                 return false;
             }
         }

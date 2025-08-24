@@ -1,4 +1,4 @@
-use matroska::{Matroska, Audio, Settings};
+use matroska::{Audio, Matroska, Settings};
 use rand::Rng;
 use symphonia::core::audio::Channels;
 
@@ -12,7 +12,7 @@ pub struct Prot {
     file_paths_dictionary: Option<Vec<String>>,
     track_ids: Option<Vec<u32>>,
     track_paths: Option<Vec<String>>,
-    duration: f64
+    duration: f64,
 }
 
 impl Prot {
@@ -26,7 +26,7 @@ impl Prot {
             file_paths_dictionary: None,
             track_ids: None,
             track_paths: None,
-            duration: 0.0
+            duration: 0.0,
         };
 
         this.refresh_tracks();
@@ -55,7 +55,7 @@ impl Prot {
             file_paths_dictionary: Some(file_paths_dictionary),
             track_ids: None,
             track_paths: None,
-            duration: 0.0
+            duration: 0.0,
         };
 
         this.refresh_tracks();
@@ -70,7 +70,7 @@ impl Prot {
 
     pub fn refresh_tracks(&mut self) {
         let mut longest_duration = 0.0;
-        
+
         if let Some(file_paths) = &self.file_paths {
             // Choose random file path from each file_paths array
             let mut track_paths: Vec<String> = Vec::new();
@@ -78,7 +78,13 @@ impl Prot {
                 let random_number = rand::thread_rng().gen_range(0..file_path.len());
                 let track_path = file_path[random_number].clone();
 
-                let index_in_dictionary = self.file_paths_dictionary.as_ref().unwrap().iter().position(|x| *x == track_path).unwrap();
+                let index_in_dictionary = self
+                    .file_paths_dictionary
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .position(|x| *x == track_path)
+                    .unwrap();
                 let duration = self.info.get_duration(index_in_dictionary as u32).unwrap();
 
                 if duration > longest_duration {
@@ -108,7 +114,8 @@ impl Prot {
             // Only print if name is "play_settings.json"
             if attachment.name == "play_settings.json" {
                 // read json data from attachment.data to object
-                let json_data: serde_json::Value = serde_json::from_slice(&attachment.data).unwrap();
+                let json_data: serde_json::Value =
+                    serde_json::from_slice(&attachment.data).unwrap();
 
                 let encoder_version = json_data["encoder_version"].as_f64();
 
@@ -129,7 +136,7 @@ impl Prot {
                                 if track_duration > longest_duration {
                                     longest_duration = track_duration;
                                     self.duration = longest_duration;
-                                } 
+                                }
                             }
                             track_index_array.push(index);
                         } else {
@@ -138,14 +145,14 @@ impl Prot {
                             let length = track["length"].to_string().parse::<u32>().unwrap();
 
                             // Get random number between starting_index and starting_index + length
-                            let index =
-                                rand::thread_rng().gen_range(starting_index..(starting_index + length));
+                            let index = rand::thread_rng()
+                                .gen_range(starting_index..(starting_index + length));
 
                             if let Some(track_duration) = self.info.get_duration(index) {
                                 if track_duration > longest_duration {
                                     longest_duration = track_duration;
                                     self.duration = longest_duration;
-                                } 
+                                }
                             }
 
                             track_index_array.push(index);
@@ -164,8 +171,7 @@ impl Prot {
 
         symph.format.tracks();
 
-        let first_track = &symph.format.tracks()
-        .first().unwrap().codec_params;
+        let first_track = &symph.format.tracks().first().unwrap().codec_params;
 
         let channels = {
             let channels_option = first_track.channels.unwrap_or(Channels::FRONT_CENTRE);
@@ -181,7 +187,7 @@ impl Prot {
         let audio = Audio {
             sample_rate: first_track.sample_rate.unwrap() as f64,
             channels: channels as u64,
-            bit_depth
+            bit_depth,
         };
 
         audio
@@ -216,7 +222,7 @@ impl Prot {
         Vec::new()
     }
 
-    pub fn get_ids(&self) ->  Vec<String> {
+    pub fn get_ids(&self) -> Vec<String> {
         if let Some(track_paths) = &self.track_paths {
             return track_paths.clone();
         }
@@ -228,11 +234,11 @@ impl Prot {
         Vec::new()
     }
 
-    pub fn enumerated_list(&self) -> Vec<(i32, String, Option<u32>)> {
-        let mut list: Vec<(i32, String, Option<u32>)> = Vec::new();
+    pub fn enumerated_list(&self) -> Vec<(u16, String, Option<u32>)> {
+        let mut list: Vec<(u16, String, Option<u32>)> = Vec::new();
         if let Some(track_paths) = &self.track_paths {
             for (index, file_path) in track_paths.iter().enumerate() {
-                list.push((index as i32, String::from(file_path), None));
+                list.push((index as u16, String::from(file_path), None));
             }
 
             return list;
@@ -240,7 +246,11 @@ impl Prot {
 
         if let Some(track_ids) = &self.track_ids {
             for (index, track_id) in track_ids.iter().enumerate() {
-                list.push((index as i32, String::from(self.file_path.as_ref().unwrap()), Some(*track_id)));
+                list.push((
+                    index as u16,
+                    String::from(self.file_path.as_ref().unwrap()),
+                    Some(*track_id),
+                ));
             }
 
             return list;
@@ -268,7 +278,7 @@ impl Prot {
     pub fn get_file_paths_dictionary(&self) -> Vec<String> {
         match &self.file_paths_dictionary {
             Some(dictionary) => dictionary.to_vec(),
-            None => Vec::new()
+            None => Vec::new(),
         }
     }
 }
