@@ -1,3 +1,6 @@
+//! # Prot Play
+//!
+//! A command-line audio player for the Prot audio format.
 use std::{
     sync::{Arc, Mutex},
     thread::sleep,
@@ -10,6 +13,7 @@ use proteus_audio::{player, reporter::Report, test_data};
 use rand::Rng;
 use symphonia::core::errors::Result;
 
+/// The main entry point of the application.
 fn main() {
     let args = clap::Command::new("Prot Play")
         .version("1.0")
@@ -88,6 +92,11 @@ fn main() {
     std::process::exit(code)
 }
 
+/// Formats a given time in seconds into a HH:MM:SS format.
+///
+/// # Arguments
+///
+/// * `time` - The time in seconds to format.
 fn format_time(time: f64) -> String {
     // Seconds rounded up
     let seconds = (time / 1000.0).ceil() as u32;
@@ -99,6 +108,11 @@ fn format_time(time: f64) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
+/// The main logic of the application.
+///
+/// # Arguments
+///
+/// * `args` - The command-line arguments.
 fn run(args: &ArgMatches) -> Result<i32> {
     let file_path = args.get_one::<String>("INPUT").unwrap().clone();
     let gain = args
