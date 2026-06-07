@@ -66,6 +66,10 @@ fn build_verify_subcommand() -> Command {
             true,
         ))
         .subcommand(with_input_arg(
+            Command::new("supported").about("Check whether the input has decodable audio"),
+            true,
+        ))
+        .subcommand(with_input_arg(
             Command::new("verify")
                 .about("Verify the decoded audio is valid, but do not play the audio"),
             true,

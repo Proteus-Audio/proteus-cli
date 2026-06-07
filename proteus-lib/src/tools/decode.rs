@@ -49,6 +49,18 @@ impl From<std::io::Error> for DecoderOpenError {
     }
 }
 
+/// Result of checking whether an audio file can be decoded by Proteus.
+#[derive(Debug)]
+pub struct AudioSupportCheck {
+    /// `true` when at least one audio track is present and every audio track has
+    /// a registered decoder.
+    pub supported: bool,
+    /// Number of non-null audio tracks found in the media source.
+    pub audio_track_count: usize,
+    /// Human-readable reason when [`Self::supported`] is `false`.
+    pub reason: Option<String>,
+}
+
 /// Shared opened decoder state for one media file.
 pub type OpenedDecoder = (Box<dyn Decoder>, Box<dyn FormatReader>);
 
@@ -71,6 +83,62 @@ pub fn open_file(file_path: &str) -> Result<OpenedDecoder, DecoderOpenError> {
     let decoder = get_decoder(format.as_ref())?;
 
     Ok((decoder, format))
+}
+
+/// Check whether a media file has audio tracks Proteus can decode.
+///
+/// This probes the container and verifies decoder construction for each
+/// non-null audio track without decoding the whole stream.
+pub fn check_audio_file_supported(file_path: &str) -> AudioSupportCheck {
+    match try_check_audio_file_supported(file_path) {
+        Ok(check) => check,
+        Err(err) => AudioSupportCheck {
+            supported: false,
+            audio_track_count: 0,
+            reason: Some(err.to_string()),
+        },
+    }
+}
+
+/// Fallible variant of [`check_audio_file_supported`] for callers that want to
+/// distinguish I/O/probe failures from unsupported codecs.
+pub fn try_check_audio_file_supported(
+    file_path: &str,
+) -> Result<AudioSupportCheck, DecoderOpenError> {
+    let format = get_reader(file_path)?;
+    let audio_tracks: Vec<_> = format
+        .tracks()
+        .iter()
+        .filter(|track| track.codec_params.codec != CODEC_TYPE_NULL)
+        .collect();
+
+    if audio_tracks.is_empty() {
+        return Ok(AudioSupportCheck {
+            supported: false,
+            audio_track_count: 0,
+            reason: Some(DecoderOpenError::NoSupportedAudioTrack.to_string()),
+        });
+    }
+
+    let dec_opts = DecoderOptions::default();
+    for track in &audio_tracks {
+        if let Err(err) = get_codecs().make(&track.codec_params, &dec_opts) {
+            return Ok(AudioSupportCheck {
+                supported: false,
+                audio_track_count: audio_tracks.len(),
+                reason: Some(format!(
+                    "track {} unsupported audio codec: {}",
+                    track.id, err
+                )),
+            });
+        }
+    }
+
+    Ok(AudioSupportCheck {
+        supported: true,
+        audio_track_count: audio_tracks.len(),
+        reason: None,
+    })
 }
 
 /// Build a Symphonia `FormatReader` for the given file path.
@@ -146,7 +214,10 @@ mod tests {
     };
     use symphonia::core::formats::Track;
 
-    use super::{find_audio_track, get_decoder, get_reader, DecoderOpenError};
+    use super::{
+        check_audio_file_supported, find_audio_track, get_decoder, get_reader,
+        try_check_audio_file_supported, DecoderOpenError,
+    };
 
     fn null_track(id: u32) -> Track {
         let mut params = CodecParameters::default();
@@ -232,6 +303,24 @@ mod tests {
             assert!(decoded.frames() > 0);
             break;
         }
+    }
+
+    #[test]
+    fn check_audio_file_supported_accepts_ogg_opus_fixture() {
+        let file_path = format!(
+            "{}/../test_audio/deep_trouble_000.ogg",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let check = check_audio_file_supported(&file_path);
+        assert!(check.supported);
+        assert_eq!(check.audio_track_count, 1);
+        assert!(check.reason.is_none());
+    }
+
+    #[test]
+    fn try_check_audio_file_supported_returns_io_error_for_missing_file() {
+        let err = try_check_audio_file_supported("/definitely/missing/file.ogg").unwrap_err();
+        assert!(matches!(err, DecoderOpenError::Io(_)));
     }
 
     #[test]

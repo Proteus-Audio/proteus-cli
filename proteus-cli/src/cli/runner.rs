@@ -60,6 +60,7 @@ fn run_verify(args: &ArgMatches) -> Result<i32> {
     let mode = match verify_cmd {
         "probe" => cli::verify::VerifyMode::Probe,
         "decode" => cli::verify::VerifyMode::Decode,
+        "supported" => cli::verify::VerifyMode::Supported,
         "verify" => cli::verify::VerifyMode::Verify,
         _ => {
             error!("Unknown verify subcommand");
