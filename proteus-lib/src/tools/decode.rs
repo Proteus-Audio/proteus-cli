@@ -1,5 +1,6 @@
 //! Symphonia helpers for opening and decoding audio files.
 
+use symphonia::core::codecs::CodecRegistry;
 use symphonia::core::codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, FormatReader, Track};
@@ -50,6 +51,17 @@ impl From<std::io::Error> for DecoderOpenError {
 
 /// Shared opened decoder state for one media file.
 pub type OpenedDecoder = (Box<dyn Decoder>, Box<dyn FormatReader>);
+
+/// Return the codec registry used by Proteus decode paths.
+pub(crate) fn get_codecs() -> &'static CodecRegistry {
+    static CODECS: std::sync::OnceLock<CodecRegistry> = std::sync::OnceLock::new();
+    CODECS.get_or_init(|| {
+        let mut registry = CodecRegistry::new();
+        symphonia::default::register_enabled_codecs(&mut registry);
+        registry.register_all::<symphonia_adapter_libopus::OpusDecoder>();
+        registry
+    })
+}
 
 /// Open a file and return a decoder plus format reader.
 ///
@@ -122,17 +134,19 @@ pub fn get_decoder(format: &dyn FormatReader) -> Result<Box<dyn Decoder>, Decode
 
     let track = find_audio_track(format.tracks())?;
 
-    symphonia::default::get_codecs()
+    get_codecs()
         .make(&track.codec_params, &dec_opts)
         .map_err(DecoderOpenError::UnsupportedCodec)
 }
 
 #[cfg(test)]
 mod tests {
-    use symphonia::core::codecs::{CodecParameters, CODEC_TYPE_NULL, CODEC_TYPE_VORBIS};
+    use symphonia::core::codecs::{
+        CodecParameters, CODEC_TYPE_NULL, CODEC_TYPE_OPUS, CODEC_TYPE_VORBIS,
+    };
     use symphonia::core::formats::Track;
 
-    use super::{find_audio_track, get_reader, DecoderOpenError};
+    use super::{find_audio_track, get_decoder, get_reader, DecoderOpenError};
 
     fn null_track(id: u32) -> Track {
         let mut params = CodecParameters::default();
@@ -190,6 +204,34 @@ mod tests {
             Err(err) => err,
         };
         assert!(matches!(err, DecoderOpenError::Io(_)));
+    }
+
+    #[test]
+    fn get_decoder_supports_ogg_opus_fixture() {
+        let file_path = format!(
+            "{}/../test_audio/deep_trouble_000.ogg",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let mut format = get_reader(&file_path).expect("fixture should probe");
+        let track_id = format
+            .tracks()
+            .iter()
+            .find(|track| track.codec_params.codec == CODEC_TYPE_OPUS)
+            .map(|track| track.id)
+            .expect("fixture should contain an Opus track");
+        let mut decoder = get_decoder(format.as_ref()).expect("Opus decoder should be registered");
+
+        loop {
+            let packet = format
+                .next_packet()
+                .expect("fixture should contain packets");
+            if packet.track_id() != track_id {
+                continue;
+            }
+            let decoded = decoder.decode(&packet).expect("Opus packet should decode");
+            assert!(decoded.frames() > 0);
+            break;
+        }
     }
 
     #[test]
