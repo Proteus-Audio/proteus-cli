@@ -361,4 +361,13 @@ mod tests {
 
         assert!((duration - 1687.3265).abs() < 0.001);
     }
+
+    #[test]
+    fn ogg_vorbis_duration_uses_page_granule_position() {
+        let path = "../test_audio/test-32bit.ogg";
+        let durations = try_get_durations(path).expect("duration probe");
+        let duration = durations.values().copied().next().expect("duration value");
+
+        assert!((duration - 40.17632653061224).abs() < 0.001);
+    }
 }

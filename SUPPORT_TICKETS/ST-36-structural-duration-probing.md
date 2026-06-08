@@ -47,7 +47,7 @@ Use this priority order everywhere duration is needed:
 
 2. Route `get_durations`, `try_get_durations`, `get_durations_best_effort`, and CLI duration output through that module while preserving the existing public `HashMap<u32, f64>` API.
 
-3. Keep the current Ogg implementation as the model:
+3. [x] Keep the current Ogg implementation as the model:
    - `.ogg` / `.opus`
    - read tail pages
    - use final non-negative granule position per stream serial
@@ -113,7 +113,7 @@ Use this priority order everywhere duration is needed:
 
 - [ ] Duration probing has a documented priority order and shared result type
 - [ ] Existing public duration APIs continue to work
-- [ ] Ogg/Opus and Ogg/Vorbis use page granule positions ahead of tags
+- [x] Ogg/Opus and Ogg/Vorbis use page granule positions ahead of tags
 - [ ] FLAC, WAV, AIFF, MP3, MP4/M4A, Matroska/WebM/MKA, and ADTS AAC have format-specific structural or header-scan probes
 - [ ] Free-form `DURATION` tags are never preferred over reliable structural duration
 - [ ] Full packet scans are only used as fallback or when explicitly requested
