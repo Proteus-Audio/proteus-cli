@@ -325,7 +325,7 @@ pub fn build_cli() -> Command {
             Arg::new("read-durations")
                 .long("read-durations")
                 .action(ArgAction::SetTrue)
-                .help("Read track durations metadata, then exit"),
+                .help("Read track durations with source details, then exit"),
         )
         .arg(
             Arg::new("scan-durations")

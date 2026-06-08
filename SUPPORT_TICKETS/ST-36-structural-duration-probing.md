@@ -39,13 +39,13 @@ Use this priority order everywhere duration is needed:
 
 ## Work items
 
-1. Introduce a focused duration probing module, e.g. `container/info/duration/`, with a result type that records:
+1. [x] Introduce a focused duration probing module, e.g. `container/info/duration/`, with a result type that records:
    - track id
    - duration seconds
    - source kind: structural, frame count, tag, header scan, packet scan
    - whether the value is expected to be exact or approximate
 
-2. Route `get_durations`, `try_get_durations`, `get_durations_best_effort`, and CLI duration output through that module while preserving the existing public `HashMap<u32, f64>` API.
+2. [x] Route `get_durations`, `try_get_durations`, `get_durations_best_effort`, and CLI duration output through that module while preserving the existing public `HashMap<u32, f64>` API.
 
 3. [x] Keep the current Ogg implementation as the model:
    - `.ogg` / `.opus`
@@ -54,24 +54,24 @@ Use this priority order everywhere duration is needed:
    - divide by the track sample rate
    - do not trust `DURATION` tags ahead of granule positions
 
-4. Add native FLAC structural probing:
+4. [x] Add native FLAC structural probing:
    - read `STREAMINFO.total_samples`
    - divide by `STREAMINFO.sample_rate`
    - handle zero/unknown total samples by falling back to Symphonia/frame-count/tag/scan behavior
    - add fixtures or synthetic parser tests for present, zero, and malformed `STREAMINFO`
 
-5. Add WAV/RIFF structural probing:
+5. [x] Add WAV/RIFF structural probing:
    - for PCM and IEEE float, derive duration from `data` chunk size / block align / sample rate
    - handle extensible WAV where the format is still PCM/float
    - avoid using RIFF chunk sizes for compressed formats unless the codec has a reliable frame count
    - keep existing decode/scan fallback for unsupported compressed WAV variants
 
-6. Add AIFF/AIFC structural probing parity:
+6. [x] Add AIFF/AIFC structural probing parity:
    - move existing `COMM` chunk parsing into the shared duration module
    - derive duration from sample frame count / sample rate
    - keep the existing track-info fallback behavior intact
 
-7. Add MP3 fast duration probing:
+7. [x] Add MP3 fast duration probing:
    - parse Xing/Info frame headers for total frame count
    - parse VBRI headers when present
    - for CBR files without a VBR header, estimate from file length, bitrate, and frame parameters
@@ -90,12 +90,12 @@ Use this priority order everywhere duration is needed:
    - preserve `.prot`/`.mka` behavior and track-id mapping
    - add tests for stale tag-like metadata versus structural segment/cluster timing
 
-10. Add ADTS AAC header-scan fallback:
+10. [x] Add ADTS AAC header-scan fallback:
    - detect raw ADTS streams
    - scan ADTS frame headers and sum frame durations without decoding
    - use as a fallback when no container-level duration exists
 
-11. Add source reporting for diagnostics:
+11. [x] Add source reporting for diagnostics:
    - expose an internal helper that returns duration source details
    - update `--read-durations` to show the source when requested or in verbose mode
    - keep `--scan-durations` as the explicit expensive accuracy path
@@ -111,15 +111,19 @@ Use this priority order everywhere duration is needed:
 
 ## Acceptance criteria
 
-- [ ] Duration probing has a documented priority order and shared result type
-- [ ] Existing public duration APIs continue to work
+- [x] Duration probing has a documented priority order and shared result type
+- [x] Existing public duration APIs continue to work
 - [x] Ogg/Opus and Ogg/Vorbis use page granule positions ahead of tags
-- [ ] FLAC, WAV, AIFF, MP3, MP4/M4A, Matroska/WebM/MKA, and ADTS AAC have format-specific structural or header-scan probes
-- [ ] Free-form `DURATION` tags are never preferred over reliable structural duration
-- [ ] Full packet scans are only used as fallback or when explicitly requested
+- [x] FLAC, WAV, AIFF, MP3, MP4/M4A, Matroska/WebM/MKA, and ADTS AAC have format-specific structural or header-scan probes
+- [x] Free-form `DURATION` tags are never preferred over reliable structural duration
+- [x] Full packet scans are only used as fallback or when explicitly requested
 - [ ] Tests cover stale metadata for every implemented format family
-- [ ] CLI diagnostics can identify how a duration was determined
+- [x] CLI diagnostics can identify how a duration was determined
 
 ## Status
 
-Not started.
+In progress. The duration-probing implementation is in place across the listed format families,
+with fixture coverage for the local FLAC/WAV/AIFF/MP3/Ogg/Matroska assets and synthetic parser
+coverage for MP4 `mdhd` and ADTS AAC. Remaining work is to complete MP4 edit-list/sample-table
+handling, Matroska last-cluster fallback, and stale-metadata fixtures or generated fixture builders
+for every format family, not just the existing stale Ogg case.

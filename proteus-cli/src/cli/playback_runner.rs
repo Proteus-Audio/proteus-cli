@@ -83,26 +83,32 @@ pub(crate) fn run_playback(
 fn maybe_print_durations(args: &ArgMatches, file_path: &str) -> Option<i32> {
     if args.get_flag("scan-durations") {
         let start = std::time::Instant::now();
-        let durations = proteus_lib::container::info::get_durations_by_scan(file_path);
+        let durations = proteus_lib::container::info::get_duration_details_by_scan(file_path);
         let elapsed = start.elapsed();
-        let mut items = durations.into_iter().collect::<Vec<_>>();
-        items.sort_by(|a, b| a.0.cmp(&b.0));
-        for (track_id, seconds) in items {
-            println!("track {}: {:.3}s", track_id, seconds);
+        let mut items = durations;
+        items.sort_by(|a, b| a.track_id.cmp(&b.track_id));
+        for detail in items {
+            println!(
+                "track {}: {:.3}s source={} exact={}",
+                detail.track_id, detail.seconds, detail.source, detail.exact
+            );
         }
         println!("scan duration: {:.3}s", elapsed.as_secs_f64());
         return Some(0);
     }
     if args.get_flag("read-durations") {
         let start = std::time::Instant::now();
-        let durations = proteus_lib::container::info::get_durations(file_path);
+        let durations = proteus_lib::container::info::get_duration_details(file_path);
         let elapsed = start.elapsed();
-        let mut items = durations.into_iter().collect::<Vec<_>>();
-        items.sort_by(|a, b| a.0.cmp(&b.0));
-        for (track_id, seconds) in items {
-            println!("track {}: {:.3}s", track_id, seconds);
+        let mut items = durations;
+        items.sort_by(|a, b| a.track_id.cmp(&b.track_id));
+        for detail in items {
+            println!(
+                "track {}: {:.3}s source={} exact={}",
+                detail.track_id, detail.seconds, detail.source, detail.exact
+            );
         }
-        println!("scan duration: {:.3}s", elapsed.as_secs_f64());
+        println!("read duration: {:.3}s", elapsed.as_secs_f64());
         return Some(0);
     }
     None
