@@ -1,6 +1,7 @@
 //! Container metadata helpers and duration probing.
 
 mod aiff;
+mod ogg;
 mod track_info;
 
 use std::{collections::HashMap, fs::File, path::Path};
@@ -172,6 +173,10 @@ pub fn try_get_durations(file_path: &str) -> Result<HashMap<u32, f64>, InfoError
 
     if probed.format.tracks().is_empty() {
         return Err(InfoError::NoTracksFound);
+    }
+
+    if let Some(duration_map) = ogg::probe_durations(file_path, probed.format.tracks()) {
+        return Ok(duration_map);
     }
 
     for (index, track) in probed.format.tracks().iter().enumerate() {
@@ -346,5 +351,14 @@ mod tests {
             ..Default::default()
         };
         assert!((get_time_from_frames(&params) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ogg_duration_prefers_page_granule_position_over_stale_duration_tag() {
+        let path = "../test_audio/deep_trouble_000.ogg";
+        let durations = try_get_durations(path).expect("duration probe");
+        let duration = durations.values().copied().next().expect("duration value");
+
+        assert!((duration - 1687.3265).abs() < 0.001);
     }
 }
