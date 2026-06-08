@@ -158,7 +158,7 @@ mod tests {
         assert_eq!(settings.start_buffer_ms, 25.0);
         assert_eq!(settings.track_eos_ms, 1000.0);
         assert_eq!(settings.start_sink_chunks, 0);
-        assert_eq!(settings.max_sink_chunks, 0);
+        assert_eq!(settings.max_sink_chunks, 40);
         assert_eq!(settings.startup_fade_ms, 150.0);
         assert_eq!(settings.seek_fade_out_ms, 30.0);
         assert_eq!(settings.seek_fade_in_ms, 80.0);
