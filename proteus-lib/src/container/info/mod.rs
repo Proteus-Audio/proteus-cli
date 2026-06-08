@@ -2,7 +2,6 @@
 
 mod aiff;
 mod duration;
-mod ogg;
 mod track_info;
 
 use std::{collections::HashMap, fs::File, path::Path};

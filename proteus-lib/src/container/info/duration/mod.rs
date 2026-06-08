@@ -6,13 +6,14 @@ mod flac;
 mod matroska;
 mod mp3;
 mod mp4;
+mod ogg;
 mod wav;
 
 use std::{collections::HashMap, fmt};
 
 use symphonia::core::formats::Track;
 
-use super::{get_time_from_frames, ogg};
+use super::get_time_from_frames;
 
 /// Where a probed duration came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
