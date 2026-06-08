@@ -318,6 +318,18 @@ mod tests {
     }
 
     #[test]
+    fn check_audio_file_supported_accepts_aiff_fixture() {
+        let file_path = format!(
+            "{}/../test_audio/test-24bit.aiff",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let check = check_audio_file_supported(&file_path);
+        assert!(check.supported, "{:?}", check.reason);
+        assert_eq!(check.audio_track_count, 1);
+        assert!(check.reason.is_none());
+    }
+
+    #[test]
     fn try_check_audio_file_supported_returns_io_error_for_missing_file() {
         let err = try_check_audio_file_supported("/definitely/missing/file.ogg").unwrap_err();
         assert!(matches!(err, DecoderOpenError::Io(_)));
