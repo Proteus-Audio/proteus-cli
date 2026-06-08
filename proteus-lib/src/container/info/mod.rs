@@ -179,15 +179,11 @@ pub fn try_get_duration_details(file_path: &str) -> Result<Vec<DurationDetail>, 
         return Err(InfoError::NoTracksFound);
     }
 
-    if let Some(details) = duration::probe_structural(file_path, tracks) {
-        return Ok(details);
-    }
-
-    if let Some(details) = duration::probe_frame_counts(tracks) {
-        return Ok(details);
-    }
-
-    if let Some(details) = duration::tag_details(&tag_durations, tracks) {
+    if let Some(details) = duration::choose_track_details(
+        duration::probe_structural(file_path, tracks),
+        duration::probe_frame_counts(tracks),
+        duration::tag_details(&tag_durations, tracks),
+    ) {
         return Ok(details);
     }
 

@@ -177,6 +177,14 @@ pub(super) fn tag_details(tag_durations: &[f64], tracks: &[Track]) -> Option<Vec
     }
 }
 
+pub(super) fn choose_track_details(
+    structural: Option<Vec<DurationDetail>>,
+    frame_counts: Option<Vec<DurationDetail>>,
+    tags: Option<Vec<DurationDetail>>,
+) -> Option<Vec<DurationDetail>> {
+    structural.or(frame_counts).or(tags)
+}
+
 pub(super) fn packet_scan_details(durations: HashMap<u32, f64>) -> Vec<DurationDetail> {
     map_to_details(durations, DurationSourceKind::PacketScan, true)
 }
@@ -257,5 +265,58 @@ mod tests {
         assert_eq!(details[0].track_id, 7);
         assert_eq!(details[0].source, DurationSourceKind::Tag);
         assert!(!details[0].exact);
+    }
+
+    #[test]
+    fn reliable_duration_sources_are_preferred_over_stale_tags_for_all_families() {
+        let families = [
+            ("ogg", DurationSourceKind::Structural),
+            ("flac", DurationSourceKind::Structural),
+            ("wav", DurationSourceKind::Structural),
+            ("aiff", DurationSourceKind::Structural),
+            ("mp3", DurationSourceKind::Structural),
+            ("mp3-header-scan", DurationSourceKind::HeaderScan),
+            ("mp4", DurationSourceKind::Structural),
+            ("matroska", DurationSourceKind::Structural),
+            ("adts", DurationSourceKind::HeaderScan),
+        ];
+
+        for (family, source) in families {
+            let reliable = vec![DurationDetail::new(0, 1.0, source, true)];
+            let stale_tag = vec![DurationDetail::new(
+                0,
+                13_442.888,
+                DurationSourceKind::Tag,
+                false,
+            )];
+
+            let details = choose_track_details(Some(reliable), None, Some(stale_tag))
+                .expect("duration details");
+
+            assert_eq!(details[0].seconds, 1.0, "{}", family);
+            assert_eq!(details[0].source, source, "{}", family);
+        }
+    }
+
+    #[test]
+    fn frame_counts_are_preferred_over_stale_tags() {
+        let frame_count = vec![DurationDetail::new(
+            0,
+            2.0,
+            DurationSourceKind::FrameCount,
+            true,
+        )];
+        let stale_tag = vec![DurationDetail::new(
+            0,
+            13_442.888,
+            DurationSourceKind::Tag,
+            false,
+        )];
+
+        let details =
+            choose_track_details(None, Some(frame_count), Some(stale_tag)).expect("details");
+
+        assert_eq!(details[0].seconds, 2.0);
+        assert_eq!(details[0].source, DurationSourceKind::FrameCount);
     }
 }

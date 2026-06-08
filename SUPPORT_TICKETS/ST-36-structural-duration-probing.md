@@ -5,7 +5,7 @@
 | File | Notes |
 |---|---|
 | `proteus-lib/src/container/info/mod.rs` | Duration probing currently mixes tag parsing, frame-count probing, format-specific fallbacks, and scan fallbacks |
-| `proteus-lib/src/container/info/ogg.rs` | Ogg page granule probing exists and should become part of a broader structural-duration probing strategy |
+| `proteus-lib/src/container/info/duration/ogg.rs` | Ogg page granule probing exists and should become part of a broader structural-duration probing strategy |
 | `proteus-lib/src/container/info/aiff.rs` | AIFF already has a simple header fallback that should be folded into the same strategy |
 | `proteus-cli/src/cli/playback_runner.rs` | `--read-durations` and `--scan-durations` output should describe the selected duration source clearly |
 
@@ -78,13 +78,13 @@ Use this priority order everywhere duration is needed:
    - for VBR files without Xing/VBRI, scan MP3 frame headers without decoding audio
    - tag metadata remains lower priority than these structural/header-derived values
 
-8. Add MP4/M4A/AAC-in-MP4 duration probing:
+8. [x] Add MP4/M4A/AAC-in-MP4 duration probing:
    - derive track duration from `mdhd` timescale/duration
    - account for edit lists (`elst`) where they affect playable duration
    - handle sample timing tables (`stts`) when track duration is absent or suspicious
    - document fragmented MP4 limitations and fall back to Symphonia/scan behavior where needed
 
-9. Add Matroska/WebM/MKA duration probing:
+9. [x] Add Matroska/WebM/MKA duration probing:
    - prefer Segment Info `Duration` with `TimestampScale` when present
    - when missing or suspicious, seek near EOF and read the last cluster/block timestamp if practical
    - preserve `.prot`/`.mka` behavior and track-id mapping
@@ -100,7 +100,7 @@ Use this priority order everywhere duration is needed:
    - update `--read-durations` to show the source when requested or in verbose mode
    - keep `--scan-durations` as the explicit expensive accuracy path
 
-12. Add regression coverage:
+12. [x] Add regression coverage:
    - stale Ogg `DURATION` tag returns granule-derived duration
    - FLAC `STREAMINFO` beats tag metadata
    - WAV/AIFF structural frame counts beat tag metadata
@@ -117,13 +117,13 @@ Use this priority order everywhere duration is needed:
 - [x] FLAC, WAV, AIFF, MP3, MP4/M4A, Matroska/WebM/MKA, and ADTS AAC have format-specific structural or header-scan probes
 - [x] Free-form `DURATION` tags are never preferred over reliable structural duration
 - [x] Full packet scans are only used as fallback or when explicitly requested
-- [ ] Tests cover stale metadata for every implemented format family
+- [x] Tests cover stale metadata for every implemented format family
 - [x] CLI diagnostics can identify how a duration was determined
 
 ## Status
 
-In progress. The duration-probing implementation is in place across the listed format families,
-with fixture coverage for the local FLAC/WAV/AIFF/MP3/Ogg/Matroska assets and synthetic parser
-coverage for MP4 `mdhd` and ADTS AAC. Remaining work is to complete MP4 edit-list/sample-table
-handling, Matroska last-cluster fallback, and stale-metadata fixtures or generated fixture builders
-for every format family, not just the existing stale Ogg case.
+Complete. The duration-probing implementation is in place across the listed format families,
+with fixture coverage for the local FLAC/WAV/AIFF/MP3/Ogg/Matroska assets, synthetic parser
+coverage for MP4 `mdhd`/`elst`/`stts`, Matroska last-cluster timing, and ADTS AAC, plus explicit
+priority coverage proving stale tag durations lose to structural, frame-count, and header-scan
+sources for every implemented format family.
