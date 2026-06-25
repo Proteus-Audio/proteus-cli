@@ -32,6 +32,7 @@ pub fn run(args: &ArgMatches, log_buffer: Arc<Mutex<VecDeque<LogLine>>>) -> Resu
             "meter" => meter_cmd::run_meter_subcommand(sub_args)?,
             "create" => match sub_args.subcommand() {
                 Some(("effects-json", _)) => create_cmd::run_create_effects_json(),
+                Some(("prot", create_args)) => create_cmd::run_create_prot(create_args),
                 _ => {
                     error!("Unknown create subcommand");
                     -1

@@ -14,6 +14,7 @@ categories = ["command-line-utilities", "multimedia", "multimedia::audio"]
 [dependencies]
 clap = "4.4.7"
 crossterm = "0.27.0"
+indicatif = { version = "0.18.4", optional = true }
 log = "0.4.20"
 ratatui = "0.26.3"
 symphonia = "0.5.5"
@@ -29,7 +30,7 @@ predicates = "3.1.0"
 tempfile = "3.10.1"
 
 [features]
-default = ["output-meter", "real-fft"]
+default = ["output-meter", "real-fft", "prot-mux"]
 bench = ["proteus-lib/bench"]
 debug = ["proteus-lib/debug"]
 real-fft = ["proteus-lib/real-fft"]
@@ -39,6 +40,7 @@ effect-meter = ["proteus-lib/effect-meter"]
 effect-meter-spectral = ["proteus-lib/effect-meter-spectral"]
 effect-meter-cli = ["effect-meter"]
 effect-meter-cli-spectral = ["effect-meter-cli", "effect-meter-spectral"]
+prot-mux = ["proteus-lib/prot-mux", "dep:indicatif"]
 
 [[bin]]
 name = "prot"

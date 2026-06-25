@@ -180,6 +180,49 @@ fn build_create_subcommand() -> Command {
         .subcommand(
             Command::new("effects-json").about("Print a default Vec<AudioEffect> JSON payload"),
         )
+        .subcommand(
+            Command::new("prot")
+                .about("Create a .prot file from a directory project")
+                .arg(
+                    Arg::new("INPUT_DIR")
+                        .help("Directory containing nested audio files and optional project JSON")
+                        .required(true)
+                        .index(1),
+                )
+                .arg(
+                    Arg::new("OUTPUT")
+                        .help("Output .prot file path")
+                        .required(true)
+                        .index(2),
+                )
+                .arg(
+                    Arg::new("title")
+                        .long("title")
+                        .value_name("TITLE")
+                        .help("Optional container title"),
+                )
+                .arg(
+                    Arg::new("force")
+                        .long("force")
+                        .short('f')
+                        .action(ArgAction::SetTrue)
+                        .help("Overwrite the output file if it already exists"),
+                )
+                .arg(
+                    Arg::new("attach")
+                        .long("attach")
+                        .short('a')
+                        .value_name("PATH")
+                        .action(ArgAction::Append)
+                        .help("Extra attachment to embed in the output container"),
+                )
+                .arg(
+                    Arg::new("no-effects")
+                        .long("no-effects")
+                        .action(ArgAction::SetTrue)
+                        .help("Do not embed effects_chain.json even if it exists"),
+                ),
+        )
 }
 
 fn build_meter_subcommand() -> Command {

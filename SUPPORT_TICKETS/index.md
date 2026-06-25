@@ -14,8 +14,8 @@ in-place; larger items get a writeup here.
 | [x]  | FR-04 | [FR-04-cli-effect-metering-harness.md](./FR-04-cli-effect-metering-harness.md) | Opt-in CLI effect metering for both offline reports and live per-effect visualization during normal playback |
 | [x]  | FR-05 | [FR-05-audible-time-aligned-effect-metering.md](./FR-05-audible-time-aligned-effect-metering.md) | Align live effect meters to audible playback time instead of mix-thread processing time |
 | [x]  | FR-06 | [FR-06-cli-spectral-graph-for-shaping-effects.md](./FR-06-cli-spectral-graph-for-shaping-effects.md) | Extend the live CLI effect meter pane with compact spectral graphs for lowpass, highpass, and multiband EQ effects |
-| [ ]  | FR-07 | [FR-07-feature-gated-prot-muxing-api.md](./FR-07-feature-gated-prot-muxing-api.md) | Add opt-in `proteus-lib` APIs for creating `.prot` files with the published Proteus muxer crate |
-| [ ]  | FR-08 | [FR-08-cli-create-prot-from-directory.md](./FR-08-cli-create-prot-from-directory.md) | Add a CLI command that packages folder-backed Proteus projects into `.prot` files with an `indicatif` progress bar |
+| [x]  | FR-07 | [FR-07-feature-gated-prot-muxing-api.md](./FR-07-feature-gated-prot-muxing-api.md) | Add opt-in `proteus-lib` APIs for creating `.prot` files with the published Proteus muxer crate |
+| [x]  | FR-08 | [FR-08-cli-create-prot-from-directory.md](./FR-08-cli-create-prot-from-directory.md) | Add a CLI command that packages folder-backed Proteus projects into `.prot` files with an `indicatif` progress bar |
 
 ## Style Issues
 
