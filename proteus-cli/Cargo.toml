@@ -1,6 +1,6 @@
 [package]
 name = "proteus-cli"
-version = "0.7.0-alpha.7"
+version = "0.7.0-alpha.8"
 edition = "2021"
 authors = ["Adam Thomas Howard <adamthomashoward@gmail.com>"]
 license-file = "../LICENSE"
